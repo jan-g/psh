@@ -1,4 +1,4 @@
-from parsy import eof, regex, generate, string, whitespace, ParseError, fail, seq, success
+from parsy import eof, regex, generate, string, whitespace, ParseError, fail, seq, success, string_from
 from .model import (ConstantString, Token, Id, VarRef, Word, Arith,
                     Command, CommandSequence, CommandPipe, While, If)
 
@@ -28,7 +28,7 @@ def command_while():
     yield whitespace.optional() >> string("do")
     body = yield command_sequence
     yield whitespace.optional() >> string("done")
-    return While(cond, body)
+    return While(condition=cond, body=body)
 
 
 @generate("cond")
@@ -98,7 +98,8 @@ def command_sequence():
 
 variable_id = regex("[a-zA-Z_][a-zA-Z0-9_]*")
 variable_name = regex("[0-9\\?!#]") | variable_id
-word_id = regex('[^\\s\'()$=";|]+').map(ConstantString)
+word_id = regex('[^\\s\'()$=";|<>&]+').map(ConstantString)
+word_redir = string_from("<", ">", ">>").map(Token)
 word_single = (string("'") >> regex("[^']*") << string("'")).map(ConstantString)
 word_expr = string("$(") >> command_sequence << string(")")
 word_variable_reference = (string("$") >> variable_name).map(VarRef)
@@ -161,6 +162,7 @@ word_part = word_variable_reference | \
             word_variable_name | \
             word_id | \
             word_equals | \
+            word_redir | \
             word_single
 
 word = word_part.many().map(Word)

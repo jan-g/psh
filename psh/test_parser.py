@@ -1,4 +1,3 @@
-import parsy
 import pytest
 
 from .parser import command, command_sequence

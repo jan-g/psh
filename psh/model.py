@@ -1,7 +1,7 @@
 import io
 import os
+import re
 import subprocess
-import sys
 
 
 class Word(list):
@@ -15,6 +15,26 @@ class Word(list):
     def matches_reserved(self, *reserved):
         if len(self) == 1 and isinstance(self[0], ConstantString) and str(self[0]) in reserved:
             return str(self[0])
+        return None
+
+    def matches_redirect(self):
+        """ Match for a redirect
+
+            n>file
+            n<file
+            n>>file
+            n>&m
+            n<&m
+            n>-
+            n<-
+
+            (Later)
+            <<<Word
+        """
+        types = [type(item) for item in self]
+        print(types)
+        if types == [ConstantString, Token, ConstantString] and self[0].is_number() and self[1] == "<":
+            return RedirectFrom(self[0], self[2])
         return None
 
     def __getitem__(self, key):
@@ -31,6 +51,10 @@ class ConstantString(str):
 
     def __eq__(self, other):
         return (isinstance(other, type(self)) or isinstance(self, type(other))) and str(self) == str(other)
+
+    NUMBER = re.compile("[0-9]+")
+    def is_number(self):
+        return self.NUMBER.match(self)
 
 
 class Token(ConstantString):
@@ -49,6 +73,32 @@ class VarRef(str):
 ASSIGN = Token("=")
 
 
+class Redirect:
+    def __init__(self, fd, file, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fd = fd
+        self.file = file
+
+    def do(self, env):
+        raise NotImplementedError
+
+    def __eq__(self, other):
+        return type(self) == type(other) and self.fd == other.fd and self.file == other.file
+
+
+class RedirectFrom(Redirect):
+    def __init__(self, fd, file, *args, **kwargs):
+        super().__init__(int(fd), file, *args, **kwargs)
+
+    def do(self, env):
+        os.close(self.fd)
+        f = self.file.evaluate(env)
+        fd = os.open(self.file, "rb")
+        if fd != self.fd:
+            os.dup2(fd, self.fd)
+            os.close(fd)
+
+
 class Evaluable:
     def evaluate(self, env, input=None, output=None, error=None):
         out = io.BytesIO()
@@ -62,8 +112,19 @@ class Evaluable:
         return False
 
 
+class Redirects:
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.redirects = []
+
+    def with_redirect(self, redirect):
+        self.redirects.append(redirect)
+        return self
+
+
 class Arith(Evaluable):
-    def __init__(self, expr):
+    def __init__(self, expr, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.expr = expr
 
     def execute(self,  env, input=None, output=None, error=None):
@@ -73,25 +134,31 @@ class Arith(Evaluable):
         return str(self.expr(env))
 
 
-class List(list, Evaluable):
+class List(Evaluable, list):
     def __repr__(self):
         return "{}({!r})".format(self.__class__.__name__, list(self))
 
 
-class Command(List):
+class Command(Redirects, List):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Extract assignments and redirects
-        self.redirects = []
         self.assignments = []
         items = []
         might_be_assignment = True
 
         for item in self:
-            if might_be_assignment and isinstance(item, Word) and item.matches_assignment():
-                self.assignments.append(item)
-                continue
-            might_be_assignment = False
+            if isinstance(item, Word):
+                if might_be_assignment and item.matches_assignment():
+                    self.with_assignment(item)
+                    continue
+                might_be_assignment = False
+
+                redir = item.matches_redirect()
+                if redir is not None:
+                    self.with_redirect(redir)
+                    continue
+
             items.append(item)
 
         self[:] = items
@@ -202,8 +269,9 @@ class CommandPipe(List):
         return res
 
 
-class While(Evaluable):
-    def __init__(self, condition=None, body=None):
+class While(Evaluable, Redirects):
+    def __init__(self, condition=None, body=None, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.condition = condition
         self.body = body
 
@@ -221,7 +289,7 @@ class While(Evaluable):
         return isinstance(other, self.__class__) and self.condition == other.condition and self.body == other.body
 
 
-class If(List):
+class If(List, Redirects):
     OTHERWISE = object()
 
     def execute(self,  env, input=None, output=None, error=None):
