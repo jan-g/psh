@@ -9,7 +9,7 @@ def read_file(fn):
 setup(
     name="psh",
     version="0.0.1",
-    description="A shell implementaiton in python",
+    description="A shell implementation in python",
     long_description=read_file("README.md"),
     author="jang",
     author_email="",
@@ -27,9 +27,10 @@ setup(
                       "argcomplete",
                       "parsy",
                       "prompt_toolkit",
-                     ],
+    ],
     tests_require=[
                     "pytest",
                     "flake8",
-                  ],
+                    "wheel",
+    ],
 )

@@ -58,6 +58,20 @@ class Evaluable:
     def execute(self,  env, input=None, output=None, error=None):
         raise NotImplementedError()
 
+    def is_null(self):
+        return False
+
+
+class Arith(Evaluable):
+    def __init__(self, expr):
+        self.expr = expr
+
+    def execute(self,  env, input=None, output=None, error=None):
+        raise RuntimeError("don't try to execute arithmetic expressions")
+
+    def evaluate(self, env, input=None, output=None, error=None):
+        return str(self.expr(env))
+
 
 class List(list, Evaluable):
     def __repr__(self):
@@ -82,7 +96,15 @@ class Command(List):
 
         self[:] = items
 
+    def with_assignment(self, assignment):
+        self.assignments.append(assignment)
+        return self
+
+    def is_null(self):
+        return len(self) == len(self.redirects) == len(self.assignments) == 0
+
     def execute(self, env, input=None, output=None, error=None):
+        print("executing:", self)
         assert env.permit_execution
         for var, _, *rest in self.assignments:
             assert isinstance(var, Id)
@@ -127,7 +149,7 @@ class Command(List):
 class CommandSequence(Command):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self[:] = [item for item in self if not (isinstance(item, list) and len(item) == 0)]
+        self[:] = [item for item in self if not (isinstance(item, list) and item.is_null())]
 
     def execute(self, env, input=None, output=None, error=None):
         assert env.permit_execution
@@ -141,6 +163,9 @@ class CommandSequence(Command):
 
 class CommandPipe(List):
     """A sequence of Command objects. We create pipes between each."""
+
+    def is_null(self):
+        return len(self) == 0
 
     def execute(self, env, input=None, output=None, error=None):
         if len(self) == 0:

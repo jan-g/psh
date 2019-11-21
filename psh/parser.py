@@ -1,5 +1,5 @@
-from parsy import eof, regex, generate, string, whitespace, ParseError, fail
-from .model import (ConstantString, Token, Id, VarRef, Word,
+from parsy import eof, regex, generate, string, whitespace, ParseError, fail, seq, success
+from .model import (ConstantString, Token, Id, VarRef, Word, Arith,
                     Command, CommandSequence, CommandPipe, While, If)
 
 
@@ -105,7 +105,58 @@ word_variable_reference = (string("$") >> variable_name).map(VarRef)
 word_variable_name = variable_id.map(Id)
 word_equals = string("=").map(Token)
 
+e_id = variable_id
+
+
+@generate("expr-simple")
+def expr_atom():
+    v = yield (whitespace.optional() >> e_id).optional()
+    if v is not None:
+        return lambda env: float(env.get(v))
+
+    v = yield (whitespace.optional() >> regex(r"-?[0-9]+(\.[0-9]*)?").map(float)).optional()
+    if v is not None:
+        return lambda env: v
+
+    ex = yield whitespace.optional() >> string("(") >> expr << whitespace.optional() << string(")")
+    return ex
+
+@generate("expr-mul")
+def expr_mul():
+    op = (string("*").result(lambda first: lambda rest: lambda env: first(env) * rest(env)) |
+          string("/").result(lambda first: lambda rest: lambda env: first(env) / rest(env)))
+    this = lambda _: lambda rest: rest
+    ms = yield (success([this]) + expr_atom.times(1)).times(1) + \
+               (whitespace.optional() >> op.times(1) + expr_atom.times(1)).many()
+
+    value = None
+    for op, item in ms:
+        value = op(value)(item)
+
+    return value
+
+
+@generate("expr-add")
+def expr_add():
+    op = (string("+").result(lambda first: lambda rest: lambda env: first(env) + rest(env)) |
+          string("-").result(lambda first: lambda rest: lambda env: first(env) - rest(env)))
+    this = lambda _: lambda rest: rest
+    ms = yield (success([this]) + expr_mul.times(1)).times(1) + \
+               (whitespace.optional() >> op.times(1) + expr_mul.times(1)).many()
+
+    value = None
+    for op, item in ms:
+        value = op(value)(item)
+
+    return value
+
+
+expr = expr_add
+
+word_arith = (string("$((") >> expr << whitespace.optional() << string("))")).map(Arith)
+
 word_part = word_variable_reference | \
+            word_arith | \
             word_expr | \
             word_variable_name | \
             word_id | \
@@ -113,6 +164,17 @@ word_part = word_variable_reference | \
             word_single
 
 word = word_part.many().map(Word)
+
+
+
+"""
+expr_simple = e_id | (string("(") >> expr << string(")"))
+expr_add = seq(
+    first=expr_simple,
+    add=string("+"),
+    second = seq(expr_add)
+).combine_dict(lambda env: first(env) + second(env))
+"""
 
 
 if __name__ == '__main__':
