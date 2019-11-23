@@ -6,7 +6,7 @@ from .model import (ConstantString, Token, Id, VarRef, Word, Arith,
                     MaybeDoubleQuoted)
 
 
-ws = regex('[ \t]+')
+ws = regex('([ \t]|\\\\\n)+')
 eol = string('\n')
 
 # End of statement
@@ -47,31 +47,31 @@ def command_while():
 
 @generate("cond")
 def command_cond():
-    yield whitespace.optional()
+    yield ws.optional()
     redirs1 = yield redirects
-    yield whitespace.optional()
+    yield ws.optional()
     yield string("if")
     cond = yield command_sequence
-    yield whitespace.optional() >> string("then")
+    yield whitespace.optional() >> string("then") << ws.optional() << eol.optional()
     body = yield command_sequence
     pairs = [(cond, body)]
 
     while True:
-        tok = yield (whitespace.optional() >> string("elif")).optional()
+        tok = yield (whitespace.optional() >> string("elif")).optional() << ws.optional() << eol.optional()
         if tok is None:
             break
         cond = yield command_sequence
-        yield whitespace.optional() >> string("then")
+        yield whitespace.optional() >> string("then") << ws.optional() << eol.optional()
         body = yield command_sequence
         pairs.append((cond, body))
 
-    tok = yield (whitespace.optional() >> string("else")).optional()
+    tok = yield (whitespace.optional() >> string("else")).optional() << ws.optional() << eol.optional()
     if tok is not None:
         body = yield command_sequence
         pairs.append((If.OTHERWISE, body))
 
     yield whitespace.optional() >> string("fi")
-    yield whitespace.optional()
+    yield ws.optional()
     redirs2 = yield redirects
 
     return If(pairs).with_redirect(*redirs1, *redirs2)
@@ -117,9 +117,10 @@ def command_sequence():
     return CommandSequence(seq)
 
 
+eaten_newline = string("\\\n").result(Token(""))
 variable_id = regex("[a-zA-Z_][a-zA-Z0-9_]*")
 variable_name = regex("[0-9\\?!#]") | variable_id
-word_id = regex('[^\\s\'()$=";|<>&]+').map(ConstantString)
+word_id = regex('[^\\s\'()$=";|<>&\\\\]+').map(ConstantString)
 word_redir = string_from("<&", "<", ">&", ">>", ">").map(Token)
 word_single = (string("'") >> regex("[^']*") << string("'")).map(ConstantString)
 word_expr = string("$(") >> command_sequence << string(")")
@@ -198,9 +199,12 @@ word_part = word_variable_reference \
           | word_equals \
           | word_redir \
           | word_single \
-          | word_double
+          | word_double \
+          | eaten_newline
 
-word = word_part.many().map(lambda x: x[0] if len(x) == 1 and isinstance(x[0], Word) else Word(x))
+word = word_part.many().map(
+    lambda x: x[0] if len(x) == 1 and isinstance(x[0], Word) else
+    Word([i for i in x if i != Token("")]))
 
 
 redirect_dup_from_n = seq(regex("[0-9]+"), string("<&") >> word).combine(RedirectDup)
