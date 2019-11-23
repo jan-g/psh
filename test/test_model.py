@@ -2,9 +2,9 @@ import io
 import logging
 import tempfile
 
-from .parser import command
-from .model import Word, ConstantString, Command, VarRef, Id, Token, CommandSequence, CommandPipe, While, If
-from .builtin import make_env
+from psh.parser import command
+from psh.model import Word, ConstantString, Command, VarRef, Id, Token, CommandSequence, CommandPipe, While, If
+from psh.builtin import make_env
 
 LOG = logging.getLogger(__name__)
 

@@ -1,6 +1,8 @@
+from functools import partial
 from parsy import eof, regex, generate, string, whitespace, ParseError, fail, seq, success, string_from
 from .model import (ConstantString, Token, Id, VarRef, Word, Arith,
-                    Command, CommandSequence, CommandPipe, While, If)
+                    Command, CommandSequence, CommandPipe, While, If,
+                    RedirectFrom, RedirectTo, RedirectDup)
 
 
 @generate("command")
@@ -23,16 +25,23 @@ def command():
 @generate("while")
 def command_while():
     yield whitespace.optional()
+    redirs1 = yield redirects
+    yield whitespace.optional()
     yield string("while")
     cond = yield command_sequence
     yield whitespace.optional() >> string("do")
     body = yield command_sequence
     yield whitespace.optional() >> string("done")
-    return While(condition=cond, body=body)
+    yield whitespace.optional()
+    redirs2 = yield redirects
+    yield whitespace.optional()
+    return While(condition=cond, body=body).with_redirect(*redirs1, *redirs2)
 
 
 @generate("cond")
 def command_cond():
+    yield whitespace.optional()
+    redirs1 = yield redirects
     yield whitespace.optional()
     yield string("if")
     cond = yield command_sequence
@@ -55,8 +64,10 @@ def command_cond():
         pairs.append((If.OTHERWISE, body))
 
     yield whitespace.optional() >> string("fi")
+    yield whitespace.optional()
+    redirs2 = yield redirects
 
-    return If(pairs)
+    return If(pairs).with_redirect(*redirs1, *redirs2)
 
 
 compound_command = command_while | command_cond | command
@@ -99,7 +110,7 @@ def command_sequence():
 variable_id = regex("[a-zA-Z_][a-zA-Z0-9_]*")
 variable_name = regex("[0-9\\?!#]") | variable_id
 word_id = regex('[^\\s\'()$=";|<>&]+').map(ConstantString)
-word_redir = string_from("<", ">", ">>").map(Token)
+word_redir = string_from("<&", "<", ">&", ">>", ">").map(Token)
 word_single = (string("'") >> regex("[^']*") << string("'")).map(ConstantString)
 word_expr = string("$(") >> command_sequence << string(")")
 word_variable_reference = (string("$") >> variable_name).map(VarRef)
@@ -167,6 +178,26 @@ word_part = word_variable_reference | \
 
 word = word_part.many().map(Word)
 
+
+redirect_dup_from_n = seq(regex("[0-9]+"), string("<&") >> word).combine(RedirectDup)
+redirect_dup_from = (string("<&") >> word).map(partial(RedirectDup, 0))
+redirect_from_n = seq(regex("[0-9]+"), string("<") >> word).combine(RedirectFrom)
+redirect_from = (string("<") >> word).map(partial(RedirectFrom, 0))
+redirect_append_n = seq(regex("[0-9]+"), string(">>") >> word).combine(partial(RedirectTo, append=True))
+redirect_append = (string(">>") >> word).map(partial(RedirectTo, 1, append=True))
+redirect_dup_to_n = seq(regex("[0-9]+"), string(">&") >> word).combine(RedirectDup)
+redirect_dup_to = (string(">&") >> word).map(partial(RedirectDup, 1))
+redirect_to_n = seq(regex("[0-9]+"), string(">") >> word).combine(RedirectTo)
+redirect_to = (string(">") >> word).map(partial(RedirectTo, 1))
+
+redirect = (redirect_dup_from_n | redirect_dup_from |
+            redirect_from_n | redirect_from |
+            redirect_append_n | redirect_append |
+            redirect_dup_to_n | redirect_dup_to |
+            redirect_to_n | redirect_to
+            )
+
+redirects = redirect.sep_by(whitespace.optional())
 
 
 """

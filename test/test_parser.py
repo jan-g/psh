@@ -1,8 +1,9 @@
+import parsy
 import pytest
 
-from .parser import command, command_sequence
-from .model import Word, ConstantString, Command, VarRef, Id, Token, CommandSequence, CommandPipe, While, If
-from .builtin import Env, make_env
+from psh.parser import command, command_sequence
+from psh.model import Word, ConstantString, Command, VarRef, Id, Token, CommandSequence, CommandPipe, While, If
+from psh.builtin import Env, make_env
 
 
 def test_basic():

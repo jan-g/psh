@@ -1,8 +1,8 @@
 import parsy
 import pytest
 
-from .parser import expr
-from .builtin import make_env
+from psh.parser import expr
+from psh.builtin import make_env
 
 
 def test_expr():

@@ -1,7 +1,11 @@
+import contextlib
 import io
+import logging
 import os
 import re
 import subprocess
+
+LOG = logging.getLogger(__name__)
 
 
 class Word(list):
@@ -31,10 +35,42 @@ class Word(list):
             (Later)
             <<<Word
         """
-        types = [type(item) for item in self]
-        print(types)
-        if types == [ConstantString, Token, ConstantString] and self[0].is_number() and self[1] == "<":
-            return RedirectFrom(self[0], self[2])
+        for types, tests, make in (
+            ((ConstantString, Token),
+             (lambda x: x.is_number(), lambda t: t == ">>"),
+             lambda s: RedirectTo(s[0], s[2:], append=True)),
+            ((Token,),
+             (lambda t: t == ">>",),
+             lambda s: RedirectTo(1, s[1:], append=True)),
+            ((ConstantString, Token),
+             (lambda x: x.is_number(), lambda t: t == ">&"),
+             lambda s: RedirectDup(s[0], s[2:])),
+            ((Token,),
+             (lambda t: t == ">&",),
+             lambda s: RedirectDup(1, s[1:])),
+            ((ConstantString, Token,),
+             (lambda x: x.is_number(), lambda t: t == ">"),
+             lambda s: RedirectTo(s[0], s[2:])),
+            ((Token,),
+             (lambda t: t == ">",),
+             lambda s: RedirectTo(1, s[1:])),
+            ((ConstantString, Token,),
+             (lambda x: x.is_number(), lambda t: t == "<&"),
+             lambda s: RedirectDup(s[0], s[2:])),
+            ((Token,),
+             (lambda t: t == "<&",),
+             lambda s: RedirectDup(0, s[1:])),
+            ((ConstantString, Token,),
+             (lambda x: x.is_number(), lambda t: t == "<"),
+             lambda s: RedirectFrom(s[0], s[2:])),
+            ((Token,),
+             (lambda t: t == "<",),
+             lambda s: RedirectFrom(0, s[1:])),
+        ):
+            if len(types) < len(self) and \
+                    all(isinstance(x, t) for (x, t) in zip(self, types)) and \
+                    all(t(x) for x, t in zip(self, tests)):
+                return make(self)
         return None
 
     def __getitem__(self, key):
@@ -79,24 +115,94 @@ class Redirect:
         self.fd = fd
         self.file = file
 
+    @staticmethod
+    @contextlib.contextmanager
+    def save():
+        saver = Redirect.Saver()
+        try:
+            yield saver
+        finally:
+            saver.restore()
+
+    class Saver:
+        def __init__(self):
+            self.saved = {i: os.dup(i) for i in (0, 1, 2)}
+
+        def move(self, target):
+            for i in self.saved:
+                if self.saved[i] == target:
+                    self.saved[i] = os.dup(target)
+
+        def restore(self):
+            for i in self.saved:
+                os.dup2(self.saved[i], i)
+                if self.saved[i] not in self.saved:
+                    os.close(self.saved[i])
+
+    class NullSaver:
+        def move(self, target):
+            pass
+
+    NULL_SAVER = NullSaver()
+
     def do(self, env):
         raise NotImplementedError
 
     def __eq__(self, other):
         return type(self) == type(other) and self.fd == other.fd and self.file == other.file
 
+    def __repr__(self):
+        return "{}({})".format(self.__class__.__name__,
+                               ", ".join("{}={}".format(k, v)
+                                         for (k, v) in self.__dict__.items()
+                                         if not k.startswith("_")))
+
 
 class RedirectFrom(Redirect):
     def __init__(self, fd, file, *args, **kwargs):
         super().__init__(int(fd), file, *args, **kwargs)
 
-    def do(self, env):
+    def do(self, env, saver=Redirect.NULL_SAVER):
+        saver.move(self.fd)
         os.close(self.fd)
         f = self.file.evaluate(env)
-        fd = os.open(self.file, "rb")
+        fd = os.open(self.file, os.O_RDONLY)
         if fd != self.fd:
             os.dup2(fd, self.fd)
             os.close(fd)
+
+
+class RedirectTo(Redirect):
+    def __init__(self, fd, file, append=False, *args, **kwargs):
+        super().__init__(int(fd), file, *args, **kwargs)
+        self.append = append
+
+    def do(self, env, saver=Redirect.NULL_SAVER):
+        fn = self.file.evaluate(env)
+        fd = os.open(fn, os.O_WRONLY | os.O_TRUNC | os.O_CREAT | (os.O_APPEND if self.append else 0))
+        if fd != self.fd:
+            saver.move(self.fd)
+            os.dup2(fd, self.fd)
+            os.close(fd)
+        else:
+            os.set_inheritable(fd, True)
+
+
+class RedirectDup(Redirect):
+    def __init__(self, fd, fdfrom, *args, **kwargs):
+        super().__init__(int(fd), fdfrom, *args, **kwargs)
+
+    def do(self, env, saver=Redirect.NULL_SAVER):
+        fd = self.file.evaluate(env)
+        if fd == "-":
+            saver.move(self.fd)
+            os.close(self.fd)
+        else:
+            saver.move(self.fd)
+            fd = int(fd)
+            if fd != self.fd:
+                os.dup2(fd, self.fd)
+                os.close(fd)
 
 
 class Evaluable:
@@ -117,9 +223,13 @@ class Redirects:
         super().__init__(*args, **kwargs)
         self.redirects = []
 
-    def with_redirect(self, redirect):
-        self.redirects.append(redirect)
+    def with_redirect(self, *redirect):
+        self.redirects.extend(redirect)
         return self
+
+    def run_redirects(self, env, saver=Redirect.NULL_SAVER):
+        for redirect in self.redirects:
+            redirect.do(env, saver=saver)
 
 
 class Arith(Evaluable):
@@ -179,10 +289,12 @@ class Command(Redirects, List):
         if env.permit_execution and len(self) > 0:
             args = [item.evaluate(env) for item in self]
             if args[0] in env.builtins:
-                res = env.builtins[args[0]](*args[1:], env=env,
-                                            stdin=input,
-                                            stdout=output,
-                                            stderr=error)
+                with Redirect.save() as saver:
+                    self.run_redirects(env, saver=saver)
+                    res = env.builtins[args[0]](*args[1:], env=env,
+                                                stdin=input,
+                                                stdout=output,
+                                                stderr=error)
                 env['?'] = str(res)
                 return res
             try:
@@ -199,7 +311,7 @@ class Command(Redirects, List):
                 err = subprocess.PIPE
             p = subprocess.Popen(args, bufsize=0, executable=None,
                                  stdin=input, stdout=out, stderr=err,
-                                 preexec_fn=None,
+                                 preexec_fn=lambda: self.run_redirects(env),
                                  close_fds=False,
                                  cwd=None,
                                  env=None)
@@ -276,31 +388,47 @@ class While(Evaluable, Redirects):
         self.body = body
 
     def execute(self, env, input=None, output=None, error=None):
-        while True:
-            res = self.condition.execute(env, input=input, output=output, error=error)
-            if res != 0:
-                return res
-            self.body.execute(env, input=input, output=output, error=error)
+        with Redirect.save() as saver:
+            self.run_redirects(env, saver=saver)
+
+            while True:
+                res = self.condition.execute(env, input=input, output=output, error=error)
+                if res != 0:
+                    return res
+                self.body.execute(env, input=input, output=output, error=error)
 
     def __repr__(self):
         return "While({}, {})".format(self.condition, self.body)
 
     def __eq__(self, other):
-        return isinstance(other, self.__class__) and self.condition == other.condition and self.body == other.body
+        return (isinstance(other, self.__class__) and
+                self.condition == other.condition and
+                self.body == other.body and
+                self.redirects == other.redirects)
 
 
-class If(List, Redirects):
+class If(Redirects, List):
     OTHERWISE = object()
 
     def execute(self,  env, input=None, output=None, error=None):
         res = 0
-        for cond, body in self:
-            if cond is If.OTHERWISE:
-                test = True
-            else:
-                res = cond.execute(env, input=input, output=output, error=error)
-                test = res == 0
-            if test:
-                res = body.execute(env, input=input, output=output, error=error)
-                break
+
+        with Redirect.save() as saver:
+            self.run_redirects(env, saver=saver)
+
+            for cond, body in self:
+                if cond is If.OTHERWISE:
+                    test = True
+                else:
+                    res = cond.execute(env, input=input, output=output, error=error)
+                    test = res == 0
+                if test:
+                    res = body.execute(env, input=input, output=output, error=error)
+                    break
+
         return res
+
+    def __eq__(self, other):
+        return (isinstance(other, self.__class__) and
+                list(self) == list(other) and
+                self.redirects == other.redirects)
