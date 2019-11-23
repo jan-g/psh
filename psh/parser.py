@@ -186,6 +186,7 @@ word_double = (string('""').result(Word([ConstantString("")], double_quoted=True
                                 string("\\b").result(ConstantString("\b")) |
                                 string("\\") >> any_char.map(ConstantString) |
                                 word_arith.map(partial(MaybeDoubleQuoted.with_double_quoted)) |
+                                word_expr.map(partial(MaybeDoubleQuoted.with_double_quoted)) |
                                 word_variable_reference.map(partial(MaybeDoubleQuoted.with_double_quoted))
                                 ).many() << string("\"")).map(lambda rope: Word(rope, double_quoted=True))
 
