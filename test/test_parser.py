@@ -136,7 +136,6 @@ def test_basic(text, expected):
               ])),
          ]),
      ])),
-
 ))
 def test_sequence(text, expected):
     cmd = command_sequence.parse(text)
@@ -144,20 +143,21 @@ def test_sequence(text, expected):
     assert cmd.assignments == expected.assignments
 
 
-def test_variables():
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    (
+        ("cat foo bar", 'cat foo bar'.split()),
+        ("'hello'", 'hello'.split()),
+        ("'hel\nlo'", ['hel\nlo']),
+        ("'hello'' world'", ['hello world']),
+        ("$foo$bar", ['FOOBAR']),
+        ("$foo' '$bar", ['FOO BAR']),
+    ))
+def test_variables(text, expected):
     env = Env({"foo": "FOO", "bar": "BAR"})
-
-    for i, o in (
-            ("cat foo bar", 'cat foo bar'.split()),
-            ("'hello'", 'hello'.split()),
-            ("'hel\nlo'", ['hel\nlo']),
-            ("'hello'' world'", ['hello world']),
-            ("$foo$bar", ['FOOBAR']),
-            ("$foo' '$bar", ['FOO BAR']),
-    ):
-        cmd = command.parse(i)
-        words = [item.evaluate(env) for item in cmd]
-        assert o == words
+    cmd = command.parse(text)
+    words = [item.evaluate(env) for item in cmd]
+    assert words == expected
 
 
 def test_not_yet():

@@ -74,9 +74,9 @@ class List(Comparable, Evaluable):
 
 
 class MaybeDoubleQuoted:
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, double_quoted=False, **kwargs):
         super().__init__(*args, **kwargs)
-        self.double_quoted = False
+        self.double_quoted = double_quoted
 
     def with_double_quoted(self, double_quoted=True):
         self.double_quoted = double_quoted
@@ -85,7 +85,7 @@ class MaybeDoubleQuoted:
 
 class Word(MaybeDoubleQuoted, List):
     """ A Word is comprised of several parts"""
-    def evaluate(self, env):
+    def evaluate(self, env, input=None, output=None, error=None):
         return ''.join(item.evaluate(env) for item in self)
 
     def matches_assignment(self):
@@ -103,18 +103,22 @@ class Word(MaybeDoubleQuoted, List):
             return super().__getitem__(key)
 
 
-class ConstantString(str):
+class ConstantString(Comparable):
     """ An uninterpreted piece of string """
-    def evaluate(self, env):
-        return str(self)
+    def __init__(self, s, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.s = str(s)
 
-    def __eq__(self, other):
-        return (isinstance(other, type(self)) or isinstance(self, type(other))) and str(self) == str(other)
+    def __repr__(self):
+        return "{}({!r})".format(self.__class__.__name__, self.s)
+
+    def evaluate(self, env):
+        return self.s
 
     NUMBER = re.compile("[0-9]+")
 
     def is_number(self):
-        return self.NUMBER.match(self)
+        return self.NUMBER.match(self.s)
 
 
 class Token(ConstantString):

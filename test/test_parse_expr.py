@@ -5,19 +5,21 @@ from psh.parser import expr
 from psh.builtin import make_env
 
 
-def test_expr():
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    (
+        ("a", 1),
+        ("((b))", 2),
+        ("(( ( ( cd ) ) ))", 3),
+        ("a * b * cd", 6),
+        ("cd * cd / b", 4.5),
+        ("(8 * 8) / 8 / 8", 1),
+        ("5-4-3", -2),
+    ), ids=lambda x: x.replace(" ", "_") if isinstance(x, str) else None)
+def test_expr(text, expected):
     env = make_env()
     env.update({"a": 1,
                 "b": 2,
                 "cd": 3})
 
-    assert expr.parse("a")(env) == 1
-    assert expr.parse("((b))")(env) == 2
-    assert expr.parse("(( ( ( cd ) ) ))")(env) == 3
-
-    assert expr.parse("a * b * cd")(env) == 6
-    assert expr.parse("cd * cd / b")(env) == 4.5
-
-    assert expr.parse("(8 * 8) / 8 / 8")(env) == 1
-
-    assert expr.parse("5-4-3")(env) == -2
+    assert expr.parse(text)(env) == expected

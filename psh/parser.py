@@ -169,12 +169,13 @@ expr = expr_add
 
 word_arith = (string("$((") >> expr << whitespace.optional() << string("))")).map(Arith)
 
-word_double = (string("\"") >> (regex(r'[^"$]*').map(ConstantString) |
-                                string("\\\n").result(ConstantString("")) |
-                                string("\\\"").result(ConstantString("\"")) |
-                                string("\\$").result(ConstantString("$")) |
-                                word_arith.map(partial(MaybeDoubleQuoted.with_double_quoted))
-
+word_double = (string('""').result(Word([ConstantString("")], double_quoted=True))) | \
+              (string("\"") >> (regex(r'[^"$\\]+').map(ConstantString) |
+                                string(r"\n").result(ConstantString("")) |
+                                string(r'\"').result(ConstantString('"')) |
+                                string(r"\$").result(ConstantString("$")) |
+                                word_arith.map(partial(MaybeDoubleQuoted.with_double_quoted)) |
+                                word_variable_reference.map(partial(MaybeDoubleQuoted.with_double_quoted))
                                 ).many() << string("\"")).map(lambda rope: Word(rope, double_quoted=True))
 
 word_part = word_variable_reference \
@@ -184,11 +185,10 @@ word_part = word_variable_reference \
           | word_id \
           | word_equals \
           | word_redir \
-          | word_single
+          | word_single \
+          | word_double
 
-#          | word_double
-
-word = word_part.many().map(Word)
+word = word_part.many().map(lambda x: x[0] if len(x) == 1 and isinstance(x[0], Word) else Word(x))
 
 
 redirect_dup_from_n = seq(regex("[0-9]+"), string("<&") >> word).combine(RedirectDup)
