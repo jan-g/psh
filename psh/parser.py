@@ -1,9 +1,9 @@
 from functools import partial
 from parsy import eof, regex, generate, string, whitespace, ParseError, fail, seq, success, string_from, eof, any_char
 from .model import (ConstantString, Token, Id, VarRef, Word, Arith,
-                    Command, CommandSequence, CommandPipe, While, If,
+                    Command, CommandSequence, CommandPipe, While, If, Function,
                     RedirectFrom, RedirectTo, RedirectDup,
-                    MaybeDoubleQuoted)
+                    MaybeDoubleQuoted,)
 
 
 ws = regex('([ \t]|\\\\\n)+')
@@ -79,13 +79,21 @@ def command_cond():
 
 @generate("command-brackets")
 def command_brackets():
-    yield whitespace.optional() >> string("{")
+    yield ws.optional() >> string("{")
     cmd = yield command_sequence
     yield string("}")
     return cmd
 
 
-compound_command = command_brackets | command_while | command_cond | command
+@generate("function")
+def function_def():
+    name = yield word_id << ws.optional()
+    yield string("()") << ws.optional()
+    body = yield command_brackets
+    return Function(name, body)
+
+
+compound_command = function_def | command_brackets | command_while | command_cond | command
 
 
 @generate("pipeline")

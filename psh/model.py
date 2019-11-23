@@ -5,6 +5,8 @@ import os
 import re
 import subprocess
 
+from .builtin import Env
+
 LOG = logging.getLogger(__name__)
 
 
@@ -378,6 +380,17 @@ class Command(Redirects, List):
                                                 stderr=error)
                 env['?'] = str(res)
                 return res
+
+            if args[0] in env.functions:
+                with Redirect.save() as saver:
+                    self.run_redirects(env, saver=saver)
+                    res = env.functions[args[0]].call(*args[1:], env=env,
+                                                      input=input,
+                                                      output=output,
+                                                      error=error)
+                    env['?'] = str(res)
+                    return res
+
             try:
                 if output is not None:
                     output.fileno()
@@ -515,5 +528,26 @@ class If(Redirects, List):
                 self.redirects == other.redirects)
 
 
-class Function(Redirects):
-    pass
+class Function(Comparable, Evaluable):
+    def __init__(self, name, body, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.name = name
+        self.body = body
+
+    def is_null(self):
+        return False
+
+    def execute(self, env, input=None, output=None, error=None):
+        env.functions[self.name] = self.body
+
+    def __repr__(self):
+        return "{}({}={!r})".format(self.__class__.__name__, self.name, self.body)
+
+    def call(self, *args, env=None, input=None, output=None, error=None):
+        local = {}
+        for i, v in enumerate(args):
+            local[str(i+1)] = v
+        local['#'] = str(len(args))
+        env2 = Env(variables=local, parent=env)
+
+        return self.body.execute(env2, input=input, output=output, error=error)
