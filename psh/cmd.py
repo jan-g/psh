@@ -52,7 +52,7 @@ def main():
                     traceback.print_exc(file=sys.stderr)
                     continue
                 try:
-                    print("RESULT={}".format(cmd.execute(env,
+                    LOG.debug("RESULT={}".format(cmd.execute(env,
                                                          input=sys.stdin,
                                                          output=stdout,
                                                          error=sys.stderr)), file=sys.stderr)

@@ -37,10 +37,20 @@ def echo(*args, env=None, stdin=None, stdout=None, stderr=None):
     return 0
 
 
+def local(*args, env=None, stdin=None, stdout=None, stderr=None):
+    for a in args:
+        kv = a.split("=", 2)
+        if len(kv) == 1:
+            env.variables[kv[0]] = env.get(kv[0])
+        else:
+            env.variables[kv[0]] = kv[1]
+
+
 def make_env():
     env = Env()
     env.permit_execution = True
     env.builtins = {
         "echo": echo,
+        "local": local,
     }
     return env
