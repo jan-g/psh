@@ -21,7 +21,8 @@ def main():
         try:
             command_sequence.parse(session.default_buffer.text)
             return True
-        except ParseError:
+        except ParseError as e:
+            session.default_buffer.working_index = e.index
             return False
 
     @kb.add('escape', 'enter')

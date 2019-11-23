@@ -1,16 +1,23 @@
 from functools import partial
-from parsy import eof, regex, generate, string, whitespace, ParseError, fail, seq, success, string_from
+from parsy import eof, regex, generate, string, whitespace, ParseError, fail, seq, success, string_from, eof, any_char
 from .model import (ConstantString, Token, Id, VarRef, Word, Arith,
                     Command, CommandSequence, CommandPipe, While, If,
                     RedirectFrom, RedirectTo, RedirectDup,
                     MaybeDoubleQuoted)
 
 
+ws = regex('[ \t]+')
+eol = string('\n')
+
+# End of statement
+EOF = object()
+eos = ws.optional() >> (regex('[;\n]') | eof.result(EOF))
+
 @generate("command")
 def command():
     words = []
     while True:
-        yield whitespace.optional()
+        yield ws.optional()
         w = yield word
         if not w:
             break
@@ -25,18 +32,17 @@ def command():
 
 @generate("while")
 def command_while():
-    yield whitespace.optional()
+    yield ws.optional()
     redirs1 = yield redirects
-    yield whitespace.optional()
+    yield ws.optional()
     yield string("while")
     cond = yield command_sequence
-    yield whitespace.optional() >> string("do")
+    yield whitespace.optional() >> string("do") << ws.optional() << eol.optional()
     body = yield command_sequence
     yield whitespace.optional() >> string("done")
-    yield whitespace.optional()
+    yield ws.optional()
     redirs2 = yield redirects
-    yield whitespace.optional()
-    return While(condition=cond, body=body).with_redirect(*redirs1, *redirs2)
+    return While(condition=cond, body=CommandSequence(body)).with_redirect(*redirs1, *redirs2)
 
 
 @generate("cond")
@@ -78,12 +84,13 @@ compound_command = command_while | command_cond | command
 def pipeline():
     seq = []
     while True:
-        cmd = yield compound_command.optional()
+        cmd = yield ws.optional() >> eol.optional() >> compound_command.optional()
         if cmd is not None:
-            seq.append(cmd)
+            if not cmd.is_null():
+                seq.append(cmd)
         else:
             break
-        pipe = yield (regex("[ \t]*") >> string("|")).optional()
+        pipe = yield (ws.optional() >> string("|")).optional()
         if pipe is None:
             break
 
@@ -96,13 +103,15 @@ def pipeline():
 def command_sequence():
     seq = []
     while True:
-        cmd = yield pipeline.optional()
+        cmd = yield pipeline
         if cmd is not None:
             seq.append(cmd)
         else:
             break
-        semi = yield (regex("[ \t]*") >> string(";")).optional()
+        semi = yield (ws.optional() >> eos).optional()
         if semi is None:
+            break
+        if semi is EOF:
             break
 
     return CommandSequence(seq)
@@ -171,9 +180,11 @@ word_arith = (string("$((") >> expr << whitespace.optional() << string("))")).ma
 
 word_double = (string('""').result(Word([ConstantString("")], double_quoted=True))) | \
               (string("\"") >> (regex(r'[^"$\\]+').map(ConstantString) |
-                                string(r"\n").result(ConstantString("")) |
-                                string(r'\"').result(ConstantString('"')) |
-                                string(r"\$").result(ConstantString("$")) |
+                                string("\\\n").result(ConstantString("")) |
+                                string("\\n").result(ConstantString("\n")) |
+                                string("\\t").result(ConstantString("\t")) |
+                                string("\\b").result(ConstantString("\b")) |
+                                string("\\") >> any_char.map(ConstantString) |
                                 word_arith.map(partial(MaybeDoubleQuoted.with_double_quoted)) |
                                 word_variable_reference.map(partial(MaybeDoubleQuoted.with_double_quoted))
                                 ).many() << string("\"")).map(lambda rope: Word(rope, double_quoted=True))
@@ -210,16 +221,6 @@ redirect = (redirect_dup_from_n | redirect_dup_from |
             )
 
 redirects = redirect.sep_by(whitespace.optional())
-
-
-"""
-expr_simple = e_id | (string("(") >> expr << string(")"))
-expr_add = seq(
-    first=expr_simple,
-    add=string("+"),
-    second = seq(expr_add)
-).combine_dict(lambda env: first(env) + second(env))
-"""
 
 
 if __name__ == '__main__':

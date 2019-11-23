@@ -3,6 +3,7 @@ class Env(dict):
         super().__init__(*args, **kwargs)
         self.permit_execution = False
         self.builtins = {}
+        self.functions = {}
 
 
 def echo(*args, env=None, stdin=None, stdout=None, stderr=None):

@@ -112,6 +112,15 @@ class ConstantString(Comparable):
     def __repr__(self):
         return "{}({!r})".format(self.__class__.__name__, self.s)
 
+    def __str__(self):
+        return self.s
+
+    def __int__(self):
+        return int(self.s)
+
+    def __float__(self):
+        return float(self.s)
+
     def evaluate(self, env):
         return self.s
 
@@ -119,6 +128,9 @@ class ConstantString(Comparable):
 
     def is_number(self):
         return self.NUMBER.match(self.s)
+
+    def __eq__(self, other):
+        return (isinstance(other, str) and self.s == other) or super().__eq__(other)
 
 
 class Token(ConstantString):
@@ -350,7 +362,7 @@ class Command(Redirects, List):
         return len(self) == len(self.redirects) == len(self.assignments) == 0
 
     def execute(self, env, input=None, output=None, error=None):
-        print("executing:", self)
+        LOG.debug("executing: %s", self)
         assert env.permit_execution
         for var, _, *rest in self.assignments:
             assert isinstance(var, Id)
