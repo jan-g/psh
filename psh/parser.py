@@ -2,7 +2,8 @@ from functools import partial
 from parsy import eof, regex, generate, string, whitespace, ParseError, fail, seq, success, string_from
 from .model import (ConstantString, Token, Id, VarRef, Word, Arith,
                     Command, CommandSequence, CommandPipe, While, If,
-                    RedirectFrom, RedirectTo, RedirectDup)
+                    RedirectFrom, RedirectTo, RedirectDup,
+                    MaybeDoubleQuoted)
 
 
 @generate("command")
@@ -133,6 +134,7 @@ def expr_atom():
     ex = yield whitespace.optional() >> string("(") >> expr << whitespace.optional() << string(")")
     return ex
 
+
 @generate("expr-mul")
 def expr_mul():
     op = (string("*").result(lambda first: lambda rest: lambda env: first(env) * rest(env)) |
@@ -167,14 +169,24 @@ expr = expr_add
 
 word_arith = (string("$((") >> expr << whitespace.optional() << string("))")).map(Arith)
 
-word_part = word_variable_reference | \
-            word_arith | \
-            word_expr | \
-            word_variable_name | \
-            word_id | \
-            word_equals | \
-            word_redir | \
-            word_single
+word_double = (string("\"") >> (regex(r'[^"$]*').map(ConstantString) |
+                                string("\\\n").result(ConstantString("")) |
+                                string("\\\"").result(ConstantString("\"")) |
+                                string("\\$").result(ConstantString("$")) |
+                                word_arith.map(partial(MaybeDoubleQuoted.with_double_quoted))
+
+                                ).many() << string("\"")).map(lambda rope: Word(rope, double_quoted=True))
+
+word_part = word_variable_reference \
+          | word_arith \
+          | word_expr \
+          | word_variable_name \
+          | word_id \
+          | word_equals \
+          | word_redir \
+          | word_single
+
+#          | word_double
 
 word = word_part.many().map(Word)
 

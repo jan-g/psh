@@ -8,7 +8,82 @@ import subprocess
 LOG = logging.getLogger(__name__)
 
 
-class Word(list):
+class Comparable:
+    def __eq__(self, other):
+        return ((isinstance(other, type(self))
+                 and all(other.__dict__.get(k) == v
+                         for (k, v) in self.__dict__.items()
+                         if not k.startswith("_"))) or
+                (isinstance(self, type(other))
+                 and all(self.__dict__.get(k) == v
+                         for (k, v) in other.__dict__.items()
+                         if not k.startswith("_"))))
+
+
+class Evaluable:
+    def evaluate(self, env, input=None, output=None, error=None):
+        out = io.BytesIO()
+        self.execute(env, input=input, output=out, error=error)
+        return out.getvalue().decode("utf-8").rstrip("\n")
+
+    def execute(self,  env, input=None, output=None, error=None):
+        raise NotImplementedError()
+
+    def is_null(self):
+        return False
+
+
+class List(Comparable, Evaluable):
+    def __init__(self, items, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.items = items
+
+    def __repr__(self):
+        return "{}({!r}{})".format(self.__class__.__name__, self.items,
+                                   "".join(", {}={!r}".format(k, v)
+                                           for (k, v) in self.__dict__.items()
+                                           if not k.startswith("_")
+                                           and k != "items"))
+
+    def execute(self,  env, input=None, output=None, error=None):
+        raise NotImplementedError()
+
+    def __getitem__(self, key):
+        return self.items[key]
+
+    def __setitem__(self, key, value):
+        if isinstance(key, slice):
+            self.items[key] = list(value)
+        else:
+            self.items[key] = value
+
+    def __len__(self):
+        return len(self.items)
+
+    def __iter__(self):
+        return iter(self.items)
+
+    def append(self, item):
+        return self.items.append(item)
+
+    def extend(self, items):
+        return self.items.extend(items)
+
+    def __eq__(self, other):
+        return (isinstance(other, list) and self.items == other) or super().__eq__(other)
+
+
+class MaybeDoubleQuoted:
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.double_quoted = False
+
+    def with_double_quoted(self, double_quoted=True):
+        self.double_quoted = double_quoted
+        return self
+
+
+class Word(MaybeDoubleQuoted, List):
     """ A Word is comprised of several parts"""
     def evaluate(self, env):
         return ''.join(item.evaluate(env) for item in self)
@@ -19,58 +94,6 @@ class Word(list):
     def matches_reserved(self, *reserved):
         if len(self) == 1 and isinstance(self[0], ConstantString) and str(self[0]) in reserved:
             return str(self[0])
-        return None
-
-    def matches_redirect(self):
-        """ Match for a redirect
-
-            n>file
-            n<file
-            n>>file
-            n>&m
-            n<&m
-            n>-
-            n<-
-
-            (Later)
-            <<<Word
-        """
-        for types, tests, make in (
-            ((ConstantString, Token),
-             (lambda x: x.is_number(), lambda t: t == ">>"),
-             lambda s: RedirectTo(s[0], s[2:], append=True)),
-            ((Token,),
-             (lambda t: t == ">>",),
-             lambda s: RedirectTo(1, s[1:], append=True)),
-            ((ConstantString, Token),
-             (lambda x: x.is_number(), lambda t: t == ">&"),
-             lambda s: RedirectDup(s[0], s[2:])),
-            ((Token,),
-             (lambda t: t == ">&",),
-             lambda s: RedirectDup(1, s[1:])),
-            ((ConstantString, Token,),
-             (lambda x: x.is_number(), lambda t: t == ">"),
-             lambda s: RedirectTo(s[0], s[2:])),
-            ((Token,),
-             (lambda t: t == ">",),
-             lambda s: RedirectTo(1, s[1:])),
-            ((ConstantString, Token,),
-             (lambda x: x.is_number(), lambda t: t == "<&"),
-             lambda s: RedirectDup(s[0], s[2:])),
-            ((Token,),
-             (lambda t: t == "<&",),
-             lambda s: RedirectDup(0, s[1:])),
-            ((ConstantString, Token,),
-             (lambda x: x.is_number(), lambda t: t == "<"),
-             lambda s: RedirectFrom(s[0], s[2:])),
-            ((Token,),
-             (lambda t: t == "<",),
-             lambda s: RedirectFrom(0, s[1:])),
-        ):
-            if len(types) < len(self) and \
-                    all(isinstance(x, t) for (x, t) in zip(self, types)) and \
-                    all(t(x) for x, t in zip(self, tests)):
-                return make(self)
         return None
 
     def __getitem__(self, key):
@@ -89,6 +112,7 @@ class ConstantString(str):
         return (isinstance(other, type(self)) or isinstance(self, type(other))) and str(self) == str(other)
 
     NUMBER = re.compile("[0-9]+")
+
     def is_number(self):
         return self.NUMBER.match(self)
 
@@ -101,9 +125,13 @@ class Id(ConstantString):
     pass
 
 
-class VarRef(str):
+class VarRef(Comparable, MaybeDoubleQuoted):
+    def __init__(self, expr=None, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.expr = expr
+
     def evaluate(self, env):
-        return env[str(self)]
+        return env[str(self.expr)]
 
 
 ASSIGN = Token("=")
@@ -157,6 +185,61 @@ class Redirect:
                                          for (k, v) in self.__dict__.items()
                                          if not k.startswith("_")))
 
+    @staticmethod
+    def from_word(word):
+        """ Match for a redirect
+
+            n>file
+            n<file
+            n>>file
+            n>&m
+            n<&m
+            n>-
+            n<-
+
+            (Later)
+            <<<Word
+        """
+        if word.double_quoted:
+            return None
+        for types, tests, make in (
+            ((ConstantString, Token),
+             (lambda x: x.is_number(), lambda t: t == ">>"),
+             lambda s: RedirectTo(s[0], s[2:], append=True)),
+            ((Token,),
+             (lambda t: t == ">>",),
+             lambda s: RedirectTo(1, s[1:], append=True)),
+            ((ConstantString, Token),
+             (lambda x: x.is_number(), lambda t: t == ">&"),
+             lambda s: RedirectDup(s[0], s[2:])),
+            ((Token,),
+             (lambda t: t == ">&",),
+             lambda s: RedirectDup(1, s[1:])),
+            ((ConstantString, Token,),
+             (lambda x: x.is_number(), lambda t: t == ">"),
+             lambda s: RedirectTo(s[0], s[2:])),
+            ((Token,),
+             (lambda t: t == ">",),
+             lambda s: RedirectTo(1, s[1:])),
+            ((ConstantString, Token,),
+             (lambda x: x.is_number(), lambda t: t == "<&"),
+             lambda s: RedirectDup(s[0], s[2:])),
+            ((Token,),
+             (lambda t: t == "<&",),
+             lambda s: RedirectDup(0, s[1:])),
+            ((ConstantString, Token,),
+             (lambda x: x.is_number(), lambda t: t == "<"),
+             lambda s: RedirectFrom(s[0], s[2:])),
+            ((Token,),
+             (lambda t: t == "<",),
+             lambda s: RedirectFrom(0, s[1:])),
+        ):
+            if len(types) < len(word) and \
+                    all(isinstance(x, t) for (x, t) in zip(word, types)) and \
+                    all(t(x) for x, t in zip(word, tests)):
+                return make(word)
+        return None
+
 
 class RedirectFrom(Redirect):
     def __init__(self, fd, file, *args, **kwargs):
@@ -205,19 +288,6 @@ class RedirectDup(Redirect):
                 os.close(fd)
 
 
-class Evaluable:
-    def evaluate(self, env, input=None, output=None, error=None):
-        out = io.BytesIO()
-        self.execute(env, input=input, output=out, error=error)
-        return out.getvalue().decode("utf-8").rstrip("\n")
-
-    def execute(self,  env, input=None, output=None, error=None):
-        raise NotImplementedError()
-
-    def is_null(self):
-        return False
-
-
 class Redirects:
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -232,7 +302,7 @@ class Redirects:
             redirect.do(env, saver=saver)
 
 
-class Arith(Evaluable):
+class Arith(MaybeDoubleQuoted, Evaluable):
     def __init__(self, expr, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.expr = expr
@@ -242,11 +312,6 @@ class Arith(Evaluable):
 
     def evaluate(self, env, input=None, output=None, error=None):
         return str(self.expr(env))
-
-
-class List(Evaluable, list):
-    def __repr__(self):
-        return "{}({!r})".format(self.__class__.__name__, list(self))
 
 
 class Command(Redirects, List):
@@ -264,9 +329,9 @@ class Command(Redirects, List):
                     continue
                 might_be_assignment = False
 
-                redir = item.matches_redirect()
-                if redir is not None:
-                    self.with_redirect(redir)
+                redirect = Redirect.from_word(item)
+                if redirect is not None:
+                    self.with_redirect(redirect)
                     continue
 
             items.append(item)
@@ -328,7 +393,7 @@ class Command(Redirects, List):
 class CommandSequence(Command):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self[:] = [item for item in self if not (isinstance(item, list) and item.is_null())]
+        self[:] = [item for item in self if not (isinstance(item, List) and item.is_null())]
 
     def execute(self, env, input=None, output=None, error=None):
         assert env.permit_execution
