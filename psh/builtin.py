@@ -25,7 +25,7 @@ class Env:
 
     def get(self, key, default=None):
         if self.parent is None or key in self.variables:
-            return self.variables[key]
+            return self.variables.get(key, default)
         elif self.parent is not None:
             return self.parent.get(key, default)
         return default

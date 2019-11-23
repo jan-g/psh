@@ -1,4 +1,4 @@
-from .model import While
+from .model import While, Function
 from .builtin import Env
 
 
@@ -27,6 +27,16 @@ def break_(*args, env=None, stdin=None, stdout=None, stderr=None):
     raise While.Break(n)
 
 
+def return_(*args, env=None, stdin=None, stdout=None, stderr=None):
+    if len(args) == 0:
+        n = int(env.get('?', 0))
+    elif len(args) == 1:
+        n = int(args[0])
+    else:
+        raise Exception("duff return - we need some exception handling strategy here")
+    raise Function.Return(n)
+
+
 def make_env():
     env = Env()
     env.permit_execution = True
@@ -34,5 +44,6 @@ def make_env():
         "echo": echo,
         "local": local,
         "break": break_,
+        "return": return_,
     }
     return env

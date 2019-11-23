@@ -540,6 +540,10 @@ class If(Redirects, List):
 
 
 class Function(Comparable, Evaluable):
+    class Return(Exception):
+        def __init__(self, ret, *args, **kwargs):
+            self.ret = ret
+
     def __init__(self, name, body, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.name = name
@@ -561,4 +565,7 @@ class Function(Comparable, Evaluable):
         local['#'] = str(len(args))
         env2 = Env(variables=local, parent=env)
 
-        return self.body.execute(env2, input=input, output=output, error=error)
+        try:
+            return self.body.execute(env2, input=input, output=output, error=error)
+        except Function.Return as e:
+            return e.ret

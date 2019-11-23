@@ -34,3 +34,18 @@ def test_locals():
 
     assert cmd.evaluate(env) == "hello world"
     assert env['x'] == "1"
+
+
+def test_return():
+    env = make_env()
+    env['x'] = "30"
+    env.functions["f"] = Function(Id("f"), CommandSequence([
+        Command([Word([Id("return")]), Word([VarRef("x")])]),
+    ]))
+
+    cmd = CommandSequence([
+        Command([Word([Id("f")]), Word([ConstantString("hello world")])]),
+    ])
+
+    assert cmd.evaluate(env) == ""
+    assert env['?'] == "30"
