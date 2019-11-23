@@ -1,9 +1,7 @@
-import parsy
 import pytest
 
-from psh.parser import command, command_sequence
+from psh.parser import command_sequence
 from psh.model import Word, ConstantString, Command, VarRef, Id, Token, CommandSequence, Function
-from psh.builtin import Env, make_env
 
 
 @pytest.mark.parametrize(("text", "expected"), (

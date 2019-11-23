@@ -2,7 +2,7 @@ import parsy
 import pytest
 
 from psh.parser import expr
-from psh.builtin import make_env
+from psh.local import make_env
 
 
 @pytest.mark.parametrize(

@@ -476,6 +476,11 @@ class CommandPipe(List):
 
 
 class While(Evaluable, Redirects):
+    class Break(Exception):
+        def __init__(self, n, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.n = n
+
     def __init__(self, condition=None, body=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.condition = condition
@@ -489,7 +494,13 @@ class While(Evaluable, Redirects):
                 res = self.condition.execute(env, input=input, output=output, error=error)
                 if res != 0:
                     return res
-                self.body.execute(env, input=input, output=output, error=error)
+                try:
+                    self.body.execute(env, input=input, output=output, error=error)
+                except While.Break as e:
+                    e.n -= 1
+                    if e.n <= 0:
+                        return 0
+                    raise e
 
     def __repr__(self):
         return "While({}, {})".format(self.condition, self.body)

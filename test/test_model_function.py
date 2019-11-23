@@ -2,7 +2,7 @@ import logging
 
 from psh.model import (Word, ConstantString, Token, Id, VarRef,
                        Command, CommandSequence, CommandPipe, While, If, Function)
-from psh.builtin import make_env
+from psh.local import make_env
 
 LOG = logging.getLogger(__name__)
 

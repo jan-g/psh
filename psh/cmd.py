@@ -6,8 +6,8 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.filters import Condition
 
-from .parser import command, ParseError, command_sequence
-from .builtin import make_env
+from .parser import ParseError, command_sequence
+from .local import make_env
 
 LOG = logging.getLogger(__name__)
 

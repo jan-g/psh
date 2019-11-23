@@ -3,7 +3,7 @@ import pytest
 
 from psh.parser import command, command_sequence
 from psh.model import Word, ConstantString, Command, VarRef, Id, Token, CommandSequence, CommandPipe, While, If
-from psh.builtin import Env, make_env
+from psh.local import make_env
 
 
 @pytest.mark.parametrize(("text", "expected"), (
@@ -154,7 +154,8 @@ def test_sequence(text, expected):
         ("$foo' '$bar", ['FOO BAR']),
     ))
 def test_variables(text, expected):
-    env = Env({"foo": "FOO", "bar": "BAR"})
+    env = make_env()
+    env.update({"foo": "FOO", "bar": "BAR"})
     cmd = command.parse(text)
     words = [item.evaluate(env) for item in cmd]
     assert words == expected
