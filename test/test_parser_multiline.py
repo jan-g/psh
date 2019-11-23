@@ -45,6 +45,7 @@ if_seq = CommandSequence([
              ]),
          ])
 
+
 @pytest.mark.parametrize(("text", "expected"), (
         ("cat foo bar\ncat baz",
          CommandSequence([

@@ -513,3 +513,7 @@ class If(Redirects, List):
         return (isinstance(other, self.__class__) and
                 list(self) == list(other) and
                 self.redirects == other.redirects)
+
+
+class Function(Redirects):
+    pass

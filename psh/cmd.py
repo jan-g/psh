@@ -22,7 +22,6 @@ def main():
             command_sequence.parse(session.default_buffer.text)
             return True
         except ParseError as e:
-            session.default_buffer.cursor_position = e.index
             return False
 
     @kb.add('escape', 'enter')
@@ -32,6 +31,13 @@ def main():
     @kb.add('enter', filter=f)
     def _(event):
         session.default_buffer.validate_and_handle()
+
+    @kb.add('escape', ' ')
+    def _(event):
+        try:
+            command_sequence.parse(session.default_buffer.text)
+        except ParseError as e:
+            session.default_buffer.cursor_position = e.index
 
     session = PromptSession(key_bindings=kb, multiline=True)
     env = make_env()

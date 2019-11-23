@@ -77,7 +77,15 @@ def command_cond():
     return If(pairs).with_redirect(*redirs1, *redirs2)
 
 
-compound_command = command_while | command_cond | command
+@generate("command-brackets")
+def command_brackets():
+    yield whitespace.optional() >> string("{")
+    cmd = yield command_sequence
+    yield string("}")
+    return cmd
+
+
+compound_command = command_brackets | command_while | command_cond | command
 
 
 @generate("pipeline")
@@ -120,13 +128,14 @@ def command_sequence():
 eaten_newline = string("\\\n").result(Token(""))
 variable_id = regex("[a-zA-Z_][a-zA-Z0-9_]*")
 variable_name = regex("[0-9\\?!#]") | variable_id
-word_id = regex('[^\\s\'()$=";|<>&\\\\]+').map(ConstantString)
+word_id = regex('[^\\s\'()$=";|<>&\\\\{}]+').map(ConstantString)
 word_redir = string_from("<&", "<", ">&", ">>", ">").map(Token)
 word_single = (string("'") >> regex("[^']*") << string("'")).map(ConstantString)
 word_expr = string("$(") >> command_sequence << string(")")
 word_variable_reference = (string("$") >> variable_name).map(VarRef)
 word_variable_name = variable_id.map(Id)
 word_equals = string("=").map(Token)
+word_dbrace = string("{}").map(Token)
 
 e_id = variable_id
 
@@ -200,6 +209,7 @@ word_part = word_variable_reference \
           | word_redir \
           | word_single \
           | word_double \
+          | word_dbrace \
           | eaten_newline
 
 word = word_part.many().map(
