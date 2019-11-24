@@ -1,4 +1,5 @@
 import contextlib
+import fcntl
 import io
 import logging
 import os
@@ -163,8 +164,9 @@ class Redirect:
 
     @staticmethod
     @contextlib.contextmanager
-    def save():
+    def activate(env, redirects):
         saver = Redirect.Saver()
+        redirects.run_redirects(env, saver=saver)
         try:
             yield saver
         finally:
@@ -172,18 +174,28 @@ class Redirect:
 
     class Saver:
         def __init__(self):
-            self.saved = {i: os.dup(i) for i in (0, 1, 2)}
+            self.saved = set()
+            self.was = {}
+            self.max = 100
 
         def move(self, target):
-            for i in self.saved:
-                if self.saved[i] == target:
-                    self.saved[i] = os.dup(target)
+            self.max = max(self.max, target + 1)
+            if target not in self.saved:
+                # Move it.
+                try:
+                    self.was[fcntl.fcntl(target, fcntl.F_DUPFD, self.max)] = target
+                    self.saved.add(target)
+                except OSError:
+                    pass
+                return
+            else:
+                pass
 
         def restore(self):
-            for i in self.saved:
-                os.dup2(self.saved[i], i)
-                if self.saved[i] not in self.saved:
-                    os.close(self.saved[i])
+            for now_at in self.was:
+                os.dup2(now_at, self.was[now_at])
+                if now_at not in self.saved:
+                    os.close(now_at)
 
     class NullSaver:
         def move(self, target):
@@ -266,8 +278,8 @@ class RedirectFrom(Redirect):
     def do(self, env, saver=Redirect.NULL_SAVER):
         saver.move(self.fd)
         os.close(self.fd)
-        f = self.file.evaluate(env)
-        fd = os.open(self.file, os.O_RDONLY)
+        fn = self.file.evaluate(env)
+        fd = os.open(fn, os.O_RDONLY)
         if fd != self.fd:
             os.dup2(fd, self.fd)
             os.close(fd)
@@ -295,15 +307,16 @@ class RedirectDup(Redirect):
 
     def do(self, env, saver=Redirect.NULL_SAVER):
         fd = self.file.evaluate(env)
+        saver.move(self.fd)
         if fd == "-":
-            saver.move(self.fd)
-            os.close(self.fd)
+            try:
+                os.close(self.fd)
+            except OSError:
+                pass
         else:
-            saver.move(self.fd)
             fd = int(fd)
             if fd != self.fd:
                 os.dup2(fd, self.fd)
-                os.close(fd)
 
 
 class Redirects:
@@ -372,8 +385,7 @@ class Command(Redirects, List):
         if env.permit_execution and len(self) > 0:
             args = [item.evaluate(env) for item in self]
             if args[0] in env.builtins:
-                with Redirect.save() as saver:
-                    self.run_redirects(env, saver=saver)
+                with Redirect.activate(env, self) as saver:
                     res = env.builtins[args[0]](*args[1:], env=env,
                                                 stdin=input,
                                                 stdout=output,
@@ -382,8 +394,7 @@ class Command(Redirects, List):
                 return res
 
             if args[0] in env.functions:
-                with Redirect.save() as saver:
-                    self.run_redirects(env, saver=saver)
+                with Redirect.activate(env, self) as saver:
                     res = env.functions[args[0]].call(*args[1:], env=env,
                                                       input=input,
                                                       output=output,
@@ -487,9 +498,7 @@ class While(Evaluable, Redirects):
         self.body = body
 
     def execute(self, env, input=None, output=None, error=None):
-        with Redirect.save() as saver:
-            self.run_redirects(env, saver=saver)
-
+        with Redirect.activate(env, self) as saver:
             while True:
                 res = self.condition.execute(env, input=input, output=output, error=error)
                 if res != 0:
@@ -518,9 +527,7 @@ class If(Redirects, List):
     def execute(self,  env, input=None, output=None, error=None):
         res = 0
 
-        with Redirect.save() as saver:
-            self.run_redirects(env, saver=saver)
-
+        with Redirect.activate(env, self) as saver:
             for cond, body in self:
                 if cond is If.OTHERWISE:
                     test = True
