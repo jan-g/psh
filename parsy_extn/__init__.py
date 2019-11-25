@@ -8,6 +8,8 @@ class Noted:
         class _(Noted, obj.__class__):
             pass
 
+        _.__name__ = 'Augmented_' + type(obj).__name__
+
         obj = _(obj)
         obj._notes = []
         return obj
