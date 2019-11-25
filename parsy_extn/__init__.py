@@ -1,10 +1,16 @@
+import functools
 from parsy import Parser, Result
 
 
-class NotedString(str):
-    def __init__(self, s, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._notes = []
+class Noted:
+    @staticmethod
+    def augment(obj):
+        class _(Noted, obj.__class__):
+            pass
+
+        obj = _(obj)
+        obj._notes = []
+        return obj
 
     def notes_for(self, index):
         for idx, n in self._notes[::-1]:
@@ -23,21 +29,13 @@ class NotedString(str):
                 return
         self._notes = [(index, kv)]
 
-    def __str__(self):
-        return repr(self)
-
     def __repr__(self):
-        return "{}{!r}".format(super(), self._notes)
+        return "{!r}{!r}".format(super(), self._notes)
 
 
 @Parser
 def get_notes(stream, index):
     return Result.success(index, stream.notes_for(index))
-    match = exp.match(stream, index)
-    if match:
-        return Result.success(match.end(), match.group(0))
-    else:
-        return Result.failure(index, exp.pattern)
 
 
 def put_note(kv):
@@ -46,3 +44,15 @@ def put_note(kv):
         return Result.success(index, stream.notes_update(index, kv))
 
     return put_notes
+
+
+def keeps_notes(parser):
+    orig_parse = parser.parse
+
+    def parse_(stream):
+        if not isinstance(stream, Noted):
+            stream = Noted.augment(stream)
+        return orig_parse(stream)
+
+    parser.parse = parse_
+    return parser

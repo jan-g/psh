@@ -1,5 +1,5 @@
 from parsy import whitespace, string, letter, regex, generate, decimal_digit
-from . import NotedString, get_notes, put_note
+from . import Noted, get_notes, put_note, keeps_notes
 
 
 @generate("heredoc")
@@ -23,11 +23,9 @@ def eol():
     hds = list(notes.get('hds', []))
     while len(hds) > 0:
         hd = hds.pop(0)
-        print(hd)
         lines = []
         while True:
             l = yield line
-            print("  ", l)
             if l == hd.end + "\n":
                 break
             lines.append(l)
@@ -42,6 +40,7 @@ line = regex("[^\n]*\n")
 ws = regex("[ \t]+")
 word = (letter | decimal_digit).at_least(1).concat()
 words = (word | heredoc).sep_by(ws) << eol
+words = keeps_notes(words)
 
 
 class HereDoc:
@@ -51,7 +50,6 @@ class HereDoc:
         self.content = None
 
     def __eq__(self, other):
-        print(".__eq__", self.content, other)
         return self.content == other
 
     def __repr__(self):
@@ -59,12 +57,13 @@ class HereDoc:
 
 
 def test_note_put_and_get():
-    ns = NotedString("a  b  cd <<EOF1 ceh djoqi <<EOF2 odwiqj\n"
-                     "foo\n"
-                     "bar\n"
-                     "EOF1\n"
-                     "baz\n"
-                     "EOF2\n")
+    ns = ("a  b  cd <<EOF1 ceh djoqi <<EOF2 odwiqj\n"
+          "foo\n"
+          "bar\n"
+          "EOF1\n"
+          "baz\n"
+          "EOF2\n")
+    ns = Noted.augment(ns)
     assert ns.notes_for(1) == {}
     ns.notes_update(2, {2: 2})
     assert ns._notes == [(2, {2: 2})]
@@ -79,13 +78,11 @@ def test_note_put_and_get():
 
 
 def test_parse_words():
-    ns = NotedString("a  b  cd <<EOF1 ceh djoqi <<EOF2 odwiqj\n"
-                     "foo\n"
-                     "bar\n"
-                     "EOF1\n"
-                     "baz\n"
-                     "EOF2\n")
+    ns = ("a  b  cd <<EOF1 ceh djoqi <<EOF2 odwiqj\n"
+          "foo\n"
+          "bar\n"
+          "EOF1\n"
+          "baz\n"
+          "EOF2\n")
     ws = words.parse(ns)
     assert ws == ["a", "b", "cd", "foo\nbar\n", "ceh", "djoqi", "baz\n", "odwiqj"]
-    n = ns.notes_for(len(ns))
-    assert n == {'hds': []}
