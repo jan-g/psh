@@ -2,7 +2,7 @@ import parsy
 import pytest
 
 from psh.parser import command, command_sequence
-from psh.model import Word, ConstantString, Command, VarRef, Id, Token, CommandSequence, CommandPipe, While, If
+from psh.model import Word, ConstantString, Assignment, Command, VarRef, Id, Token, CommandSequence, CommandPipe, While, If
 from psh.local import make_env
 
 
@@ -18,11 +18,15 @@ from psh.local import make_env
         ("$(cat $foo $bar)", Command([Word([CommandSequence([Command([Word([ConstantString("cat")]),
                                                                       Word([VarRef("foo")]),
                                                                       Word([VarRef("bar")])])])])])),
-        ("a=2", Command([]).with_assignment(Word([Id("a"), Token("="), ConstantString("2")]))),
+        ("a=2", Command([]).with_assignment(Assignment("a", Word([ConstantString("2")])))),
         ("a=1 b=2 echo $a$b", Command([Word([Id("echo")]),
                                        Word([VarRef("a"), VarRef("b")])]).
-         with_assignment(Word([Id("a"), Token("="), ConstantString("1")])).
-         with_assignment(Word([Id("b"), Token("="), ConstantString("2")]))),
+         with_assignment(Assignment("a", Word([ConstantString("1")])),
+                         Assignment("b", Word([ConstantString("2")])))),
+        ("a=2 echo b=1", Command([Word([Id("echo")]),
+                                  Word([Id("b"), Token("="), ConstantString("1")])]).
+         with_assignment(Assignment("a", Word([ConstantString("2")])))),
+
 ))
 def test_basic(text, expected):
     cmd = command.parse(text)

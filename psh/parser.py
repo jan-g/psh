@@ -1,24 +1,49 @@
 from functools import partial
-from parsy import eof, regex, generate, string, whitespace, ParseError, fail, seq, success, string_from, eof, any_char
-from .model import (ConstantString, Token, Id, VarRef, Word, Arith,
+from parsy import eof, regex, generate, string, ParseError, fail, seq, success, string_from, eof, any_char
+from parsy_extn import monkeypatch_parsy
+
+from .model import (ConstantString, Token, Id, VarRef, Word, Arith, Assignment,
                     Command, CommandSequence, CommandPipe, While, If, Function,
-                    RedirectFrom, RedirectTo, RedirectDup,
+                    Redirect, RedirectFrom, RedirectTo, RedirectDup,
                     MaybeDoubleQuoted,)
+
+
+# All our parser use may need to carry notes forward.
+# This cost is only paid if we actually muck around with heredocs.
+monkeypatch_parsy()
 
 
 ws = regex('([ \t]|\\\\\n)+')
 eol = string('\n')
 
+whitespace = ws | eol
+
+
 # End of statement
 EOF = object()
-eos = ws.optional() >> (regex('[;\n]') | eof.result(EOF))
+eos = ws.optional() >> (string(";") | eol | eof.result(EOF))
 
 @generate("command")
 def command():
     words = []
+    assignments = []
+    redirs = []
+    assignments_possible = True
     while True:
         yield ws.optional()
-        w = yield word
+        if assignments_possible:
+            w = yield assignment | redirect | word
+        else:
+            w = yield redirect | word
+        if isinstance(w, Word):
+            assignments_possible = False
+        elif isinstance(w, Redirect):
+            redirs.append(w)
+            continue
+        elif isinstance(w, Assignment):
+            assignments.append(w)
+            continue
+
         if not w:
             break
         if len(words) == 0 and w.matches_reserved("while", "do", "done", "if", "then", "elif", "else", "fi"):
@@ -26,7 +51,7 @@ def command():
 
         words.append(w)
 
-    cmd = Command(words)
+    cmd = Command(words).with_assignment(*assignments).with_redirect(*redirs)
     return cmd
 
 
@@ -224,6 +249,7 @@ word = word_part.many().map(
     lambda x: x[0] if len(x) == 1 and isinstance(x[0], Word) else
     Word([i for i in x if i != Token("")]))
 
+assignment = seq(variable_id, string("="), word).map(lambda vew: Assignment(vew[0], vew[2]))
 
 redirect_dup_from_n = seq(regex("[0-9]+"), string("<&") >> word).combine(RedirectDup)
 redirect_dup_from = (string("<&") >> word).map(partial(RedirectDup, 0))

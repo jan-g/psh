@@ -1,3 +1,4 @@
+import attr
 import contextlib
 import fcntl
 import io
@@ -104,6 +105,18 @@ class Word(MaybeDoubleQuoted, List):
             return self.__class__(super().__getitem__(key))
         else:
             return super().__getitem__(key)
+
+
+@attr.s
+class Assignment:
+    var = attr.ib()
+    expr = attr.ib()
+
+    @staticmethod
+    def run(env, assignments):
+        for a in assignments:
+            assert isinstance(a.var, str)
+            env[str(a.var)] = a.expr.evaluate(env)
 
 
 class ConstantString(Comparable):
@@ -350,27 +363,9 @@ class Command(Redirects, List):
         super().__init__(*args, **kwargs)
         # Extract assignments and redirects
         self.assignments = []
-        items = []
-        might_be_assignment = True
 
-        for item in self:
-            if isinstance(item, Word):
-                if might_be_assignment and item.matches_assignment():
-                    self.with_assignment(item)
-                    continue
-                might_be_assignment = False
-
-                redirect = Redirect.from_word(item)
-                if redirect is not None:
-                    self.with_redirect(redirect)
-                    continue
-
-            items.append(item)
-
-        self[:] = items
-
-    def with_assignment(self, assignment):
-        self.assignments.append(assignment)
+    def with_assignment(self, *assignment):
+        self.assignments.extend(assignment)
         return self
 
     def is_null(self):
@@ -379,9 +374,7 @@ class Command(Redirects, List):
     def execute(self, env, input=None, output=None, error=None):
         LOG.debug("executing: %s", self)
         assert env.permit_execution
-        for var, _, *rest in self.assignments:
-            assert isinstance(var, Id)
-            env[str(var)] = Word(rest).evaluate(env)
+        Assignment.run(env, self.assignments)
         if env.permit_execution and len(self) > 0:
             args = [item.evaluate(env) for item in self]
             if args[0] in env.builtins:

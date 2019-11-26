@@ -25,6 +25,7 @@ setup(
 
     install_requires=[
                       "argcomplete",
+                      "attrs",
                       "parsy",
                       "parsy-extn",
                       "prompt_toolkit",
