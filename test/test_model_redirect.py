@@ -1,11 +1,11 @@
 import os
 import pytest
 
-from psh.model import Redirect, Redirects, RedirectTo, RedirectFrom, RedirectDup, ConstantString
+from psh.model import Redirect, Redirects
 from psh.builtin import Env
-from psh.parser import redirects
+from psh.parser import redirects, command
 
-from .os import Os
+from .mock_os import Os
 
 
 @pytest.mark.parametrize(
@@ -31,11 +31,10 @@ from .os import Os
 def test_redirect(rds, during):
     o = Os()
     fds = dict(o.fds)
-    parsed = redirects.parse(rds)
-    r = Redirects().with_redirect(*parsed)
+    parsed = command.parse(rds)
     e = Env()
     with o.patch():
-        with Redirect.activate(e, r) as s:
+        with Redirect.activate(e, parsed) as s:
             assert o.fds == during
         assert o.fds == fds
 

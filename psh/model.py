@@ -165,6 +165,10 @@ class VarRef(Comparable, MaybeDoubleQuoted):
     def evaluate(self, env):
         return env[str(self.expr)]
 
+    def __repr__(self):
+        quote = '"' if self.double_quoted else ''
+        return '{0}${{{1}}}{0}'.format(quote, self.expr)
+
 
 ASSIGN = Token("=")
 
@@ -172,7 +176,7 @@ ASSIGN = Token("=")
 class Redirect:
     def __init__(self, fd, file, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fd = fd
+        self.fd = int(fd)
         self.file = file
 
     @staticmethod
@@ -228,66 +232,8 @@ class Redirect:
                                          for (k, v) in self.__dict__.items()
                                          if not k.startswith("_")))
 
-    @staticmethod
-    def from_word(word):
-        """ Match for a redirect
-
-            n>file
-            n<file
-            n>>file
-            n>&m
-            n<&m
-            n>-
-            n<-
-
-            (Later)
-            <<<Word
-        """
-        if word.double_quoted:
-            return None
-        for types, tests, make in (
-            ((ConstantString, Token),
-             (lambda x: x.is_number(), lambda t: t == ">>"),
-             lambda s: RedirectTo(s[0], s[2:], append=True)),
-            ((Token,),
-             (lambda t: t == ">>",),
-             lambda s: RedirectTo(1, s[1:], append=True)),
-            ((ConstantString, Token),
-             (lambda x: x.is_number(), lambda t: t == ">&"),
-             lambda s: RedirectDup(s[0], s[2:])),
-            ((Token,),
-             (lambda t: t == ">&",),
-             lambda s: RedirectDup(1, s[1:])),
-            ((ConstantString, Token,),
-             (lambda x: x.is_number(), lambda t: t == ">"),
-             lambda s: RedirectTo(s[0], s[2:])),
-            ((Token,),
-             (lambda t: t == ">",),
-             lambda s: RedirectTo(1, s[1:])),
-            ((ConstantString, Token,),
-             (lambda x: x.is_number(), lambda t: t == "<&"),
-             lambda s: RedirectDup(s[0], s[2:])),
-            ((Token,),
-             (lambda t: t == "<&",),
-             lambda s: RedirectDup(0, s[1:])),
-            ((ConstantString, Token,),
-             (lambda x: x.is_number(), lambda t: t == "<"),
-             lambda s: RedirectFrom(s[0], s[2:])),
-            ((Token,),
-             (lambda t: t == "<",),
-             lambda s: RedirectFrom(0, s[1:])),
-        ):
-            if len(types) < len(word) and \
-                    all(isinstance(x, t) for (x, t) in zip(word, types)) and \
-                    all(t(x) for x, t in zip(word, tests)):
-                return make(word)
-        return None
-
 
 class RedirectFrom(Redirect):
-    def __init__(self, fd, file, *args, **kwargs):
-        super().__init__(int(fd), file, *args, **kwargs)
-
     def do(self, env, saver=Redirect.NULL_SAVER):
         saver.move(self.fd)
         os.close(self.fd)
@@ -315,9 +261,6 @@ class RedirectTo(Redirect):
 
 
 class RedirectDup(Redirect):
-    def __init__(self, fd, fdfrom, *args, **kwargs):
-        super().__init__(int(fd), fdfrom, *args, **kwargs)
-
     def do(self, env, saver=Redirect.NULL_SAVER):
         fd = self.file.evaluate(env)
         saver.move(self.fd)
@@ -330,6 +273,37 @@ class RedirectDup(Redirect):
             fd = int(fd)
             if fd != self.fd:
                 os.dup2(fd, self.fd)
+
+
+class RedirectHere(Redirect):
+    def __init__(self, fd=0, quote=None, end=None, content=None, *args, **kwargs):
+        super().__init__(fd, content, *args, **kwargs)
+        self.quote = quote
+        self.end = end
+
+    def do(self, env, saver=Redirect.NULL_SAVER):
+        value = self.file.evaluate(env)
+
+        rd, wr = os.pipe()
+        child = os.fork()
+        if child == 0:
+            # Child process.
+            os.close(rd)
+            try:
+                os.write(wr, bytes(value, "utf-8"))
+                res = 0
+            except OSError as e:
+                res = e.errno
+            os._exit(res)
+        else:
+            # Parent process
+            os.close(wr)
+            if rd != self.fd:
+                saver.move(self.fd)
+                os.dup2(rd, self.fd)
+                os.close(rd)
+            else:
+                os.set_inheritable(rd, True)
 
 
 class Redirects:
@@ -517,7 +491,7 @@ class While(Evaluable, Redirects):
 class If(Redirects, List):
     OTHERWISE = object()
 
-    def execute(self,  env, input=None, output=None, error=None):
+    def execute(self, env, input=None, output=None, error=None):
         res = 0
 
         with Redirect.activate(env, self) as saver:

@@ -1,7 +1,6 @@
 import contextlib
 import fcntl
 import os
-import pytest
 from _pytest.monkeypatch import MonkeyPatch
 
 

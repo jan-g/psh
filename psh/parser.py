@@ -1,10 +1,10 @@
 from functools import partial
 from parsy import eof, regex, generate, string, ParseError, fail, seq, success, string_from, eof, any_char
-from parsy_extn import monkeypatch_parsy
+from parsy_extn import monkeypatch_parsy, get_notes, put_note
 
 from .model import (ConstantString, Token, Id, VarRef, Word, Arith, Assignment,
                     Command, CommandSequence, CommandPipe, While, If, Function,
-                    Redirect, RedirectFrom, RedirectTo, RedirectDup,
+                    Redirect, RedirectFrom, RedirectTo, RedirectDup, RedirectHere,
                     MaybeDoubleQuoted,)
 
 
@@ -14,7 +14,53 @@ monkeypatch_parsy()
 
 
 ws = regex('([ \t]|\\\\\n)+')
-eol = string('\n')
+
+
+@generate("eol")
+def eol():
+    """ Parse and consume a single '\n' character.
+
+    If there are any heredocs pending, immediately consume more lines of input
+    until all heredocs are filled in.
+    """
+    yield string("\n")
+
+    # Do we need to consume some heredocs?
+    notes = yield get_notes
+
+    # make a copy of this list so that we don't perturb the note.
+    hds = list(notes.get('hds', []))
+
+    while len(hds) > 0:
+        # The next heredoc to scan for
+        hd = hds.pop(0)
+
+        lines = []
+        while True:
+            line = yield regex("[^\n]*\n")
+            if line == hd.end + "\n":
+                break
+            lines.append(line)
+
+        content = ''.join(lines)
+
+        if content == '':
+            content = ConstantString("")
+        elif hd.quote is None:
+            content = double_content.parse(content)
+        else:
+            content = ConstantString(content)
+
+        # Back-fill the HereDoc content. Note, this is *not* undone by backtracking.
+        # However, a backtrack and re-parse may overwrite this value; so in the end,
+        # it's likely that this will do what we want.
+        hd.file = content
+
+        # `notes` itself is a shallow copy, so we don't need to worry about copying it here.
+        notes['hds'] = hds
+        yield put_note(notes)
+    return "\n"
+
 
 whitespace = ws | eol
 
@@ -162,7 +208,7 @@ eaten_newline = string("\\\n").result(Token(""))
 variable_id = regex("[a-zA-Z_][a-zA-Z0-9_]*")
 variable_name = regex("[0-9\\?!#]") | variable_id
 word_id = regex('[^\\s\'()$=";|<>&\\\\{}]+').map(ConstantString)
-word_redir = string_from("<&", "<", ">&", ">>", ">").map(Token)
+word_redir = string_from("<&", "<<", "<", ">&", ">>", ">").map(Token)
 word_single = (string("'") >> regex("[^']*") << string("'")).map(ConstantString)
 word_expr = string("$(") >> command_sequence << string(")")
 word_variable_reference = (string("$") >> variable_name).map(VarRef)
@@ -221,17 +267,19 @@ expr = expr_add
 
 word_arith = (string("$((") >> expr << whitespace.optional() << string("))")).map(Arith)
 
+double_content = (regex(r'[^"$\\]+').map(ConstantString) |
+                  string("\\\n").result(ConstantString("")) |
+                  string("\\n").result(ConstantString("\n")) |
+                  string("\\t").result(ConstantString("\t")) |
+                  string("\\b").result(ConstantString("\b")) |
+                  string("\\") >> any_char.map(ConstantString) |
+                  word_arith.map(partial(MaybeDoubleQuoted.with_double_quoted)) |
+                  word_expr.map(partial(MaybeDoubleQuoted.with_double_quoted)) |
+                  word_variable_reference.map(partial(MaybeDoubleQuoted.with_double_quoted))
+                  ).many().map(lambda rope: Word(rope, double_quoted=True))
+
 word_double = (string('""').result(Word([ConstantString("")], double_quoted=True))) | \
-              (string("\"") >> (regex(r'[^"$\\]+').map(ConstantString) |
-                                string("\\\n").result(ConstantString("")) |
-                                string("\\n").result(ConstantString("\n")) |
-                                string("\\t").result(ConstantString("\t")) |
-                                string("\\b").result(ConstantString("\b")) |
-                                string("\\") >> any_char.map(ConstantString) |
-                                word_arith.map(partial(MaybeDoubleQuoted.with_double_quoted)) |
-                                word_expr.map(partial(MaybeDoubleQuoted.with_double_quoted)) |
-                                word_variable_reference.map(partial(MaybeDoubleQuoted.with_double_quoted))
-                                ).many() << string("\"")).map(lambda rope: Word(rope, double_quoted=True))
+              (string("\"") >> double_content << string("\""))
 
 word_part = word_variable_reference \
           | word_arith \
@@ -262,14 +310,36 @@ redirect_dup_to = (string(">&") >> word).map(partial(RedirectDup, 1))
 redirect_to_n = seq(regex("[0-9]+"), string(">") >> word).combine(RedirectTo)
 redirect_to = (string(">") >> word).map(partial(RedirectTo, 1))
 
-redirect = (redirect_dup_from_n | redirect_dup_from |
+
+@generate("redirect-heredoc")
+def redirect_heredoc():
+    yield string("<<")
+    quote = yield (string('"') | string("'")).optional()
+    tag = yield word_id
+    if quote is not None:
+        yield string(quote)
+
+    hd = RedirectHere(0, quote=quote, end=str(tag))
+
+    # We keep track of the list of heredocs we are looking for, in order.
+    notes = yield get_notes
+    # We have to take care to copy the previous notes' list; we don't want to
+    # mutate the list itself during parsing and backtracking.
+    notes['hds'] = list(notes.get('hds', [])) + [hd]
+    yield put_note(notes)
+
+    return hd
+
+
+redirect = (redirect_heredoc |
+            redirect_dup_from_n | redirect_dup_from |
             redirect_from_n | redirect_from |
             redirect_append_n | redirect_append |
             redirect_dup_to_n | redirect_dup_to |
             redirect_to_n | redirect_to
             )
 
-redirects = redirect.sep_by(whitespace.optional())
+redirects = redirect.sep_by(ws.optional())
 
 
 if __name__ == '__main__':
