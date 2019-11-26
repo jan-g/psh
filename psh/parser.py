@@ -37,12 +37,14 @@ def eol():
 
         lines = []
         while True:
-            line = yield regex("[^\n]*\n")
-            if line == hd.end + "\n":
+            line = yield eof.result(EOF) | regex("[^\n]*\n") | regex("[^\n]*") << eof
+            if line is EOF:
+                return fail("looking for heredoc ending with " + hd.end)
+            if line.rstrip("\n") == hd.end:
                 break
             lines.append(line)
 
-        content = ''.join(lines)
+        content = '\n'.join(lines)
 
         if content == '':
             content = ConstantString("")
@@ -67,7 +69,9 @@ whitespace = ws | eol
 
 # End of statement
 EOF = object()
+EOS = object()
 eos = ws.optional() >> (string(";") | eol | eof.result(EOF))
+
 
 @generate("command")
 def command():
@@ -200,6 +204,13 @@ def command_sequence():
             break
         if semi is EOF:
             break
+
+    notes = yield get_notes
+
+    # make a copy of this list so that we don't perturb the note.
+    hds = list(notes.get('hds', []))
+    if len(hds) > 0:
+        return fail("Want additional heredocs")
 
     return CommandSequence(seq)
 

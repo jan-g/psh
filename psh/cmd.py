@@ -47,15 +47,16 @@ def main():
             while True:
                 cmd = session.prompt("> ")
                 try:
-                    cmd = command_sequence.parse(cmd)
+                    parsed = command_sequence.parse(cmd)
                 except ParseError as e:
                     traceback.print_exc(file=sys.stderr)
+                    LOG.debug("command was %r", cmd)
                     continue
                 try:
-                    LOG.debug("RESULT={}".format(cmd.execute(env,
-                                                         input=sys.stdin,
-                                                         output=stdout,
-                                                         error=sys.stderr)), file=sys.stderr)
+                    LOG.debug("RESULT={}".format(parsed.execute(env,
+                                                               input=sys.stdin,
+                                                               output=stdout,
+                                                               error=sys.stderr)))
                 except Exception as e:
                     traceback.print_exc(file=sys.stderr)
                     continue

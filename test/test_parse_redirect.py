@@ -37,6 +37,8 @@ cat = lambda: Command([Word([Id("cat")])])
                              VarRef("world", double_quoted=True),
                              ConstantString("\n"),
                          ], double_quoted=True)))),
+        ("cat <<'EOF'\nhello $world\nEOF", cat().with_redirect(
+            RedirectHere(end="EOF", quote="'", content=ConstantString("hello $world\n")))),
     ), ids=lambda x: x.replace(" ", "_").replace("'", "*") if isinstance(x, str) else None)
 def test_basic(text, expected):
     cmd = command_sequence.parse(text)
