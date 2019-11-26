@@ -92,9 +92,6 @@ class Word(MaybeDoubleQuoted, List):
     def evaluate(self, env, input=None, output=None, error=None):
         return ''.join(item.evaluate(env) for item in self)
 
-    def matches_assignment(self):
-        return len(self) >= 2 and isinstance(self[0], Id) and Token("=") == self[1]
-
     def matches_reserved(self, *reserved):
         if len(self) == 1 and isinstance(self[0], ConstantString) and str(self[0]) in reserved:
             return str(self[0])
@@ -139,11 +136,6 @@ class ConstantString(Comparable):
 
     def evaluate(self, env):
         return self.s
-
-    NUMBER = re.compile("[0-9]+")
-
-    def is_number(self):
-        return self.NUMBER.match(self.s)
 
     def __eq__(self, other):
         return (isinstance(other, str) and self.s == other) or super().__eq__(other)
