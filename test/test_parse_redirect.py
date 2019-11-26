@@ -1,6 +1,6 @@
 import pytest
 
-from psh.parser import command, command_sequence
+from psh.parser import command, command_sequence, ParseError
 from psh.model import (Word, ConstantString, Command, VarRef, Id, Token,
                        CommandSequence, CommandPipe, While, If,
                        RedirectFrom, RedirectTo, RedirectDup, RedirectHere)
@@ -43,6 +43,18 @@ cat = lambda: Command([Word([Id("cat")])])
 def test_basic(text, expected):
     cmd = command_sequence.parse(text)
     assert cmd == CommandSequence([expected])
+
+
+@pytest.mark.parametrize("text",
+(
+    "cat <<'EOF'\nhello $world\n",
+    "cat <<\"EOF\"",
+    "cat <<EOF",
+    "cat <<'EOF'\nEO",
+), ids = lambda x: x.replace(" ", "_").replace("'", "*") if isinstance(x, str) else None)
+def test_throws(text):
+    with pytest.raises(ParseError):
+        cmd = command_sequence.parse(text)
 
 
 def test_while():
