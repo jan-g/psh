@@ -218,7 +218,7 @@ def command_sequence():
 eaten_newline = string("\\\n").result(Token(""))
 variable_id = regex("[a-zA-Z_][a-zA-Z0-9_]*")
 variable_name = regex("[0-9\\?!#]") | variable_id
-word_id = regex('[^\\s\'()$=";|<>&\\\\{}]+').map(ConstantString)
+word_id = regex('[^\\s\'()$=";|<>&\\\\{}`]+').map(ConstantString)
 word_redir = string_from("<&", "<<", "<", ">&", ">>", ">").map(Token)
 word_single = (string("'") >> regex("[^']*") << string("'")).map(ConstantString)
 word_expr = string("$(") >> command_sequence << string(")")
@@ -278,6 +278,7 @@ expr = expr_add
 
 word_arith = (string("$((") >> expr << whitespace.optional() << string("))")).map(Arith)
 
+# This is also used for the expansion of heredocs that don't have quotes around the end token.
 double_content = (regex(r'[^"$\\]+').map(ConstantString) |
                   string("\\\n").result(ConstantString("")) |
                   string("\\n").result(ConstantString("\n")) |
@@ -292,7 +293,42 @@ double_content = (regex(r'[^"$\\]+').map(ConstantString) |
 word_double = (string('""').result(Word([ConstantString("")], double_quoted=True))) | \
               (string("\"") >> double_content << string("\""))
 
-word_part = word_variable_reference \
+
+@generate("backtick")
+def backtick():
+    """ Parse backticks. This is fugly.
+
+    Backticks: I gave up on single-pass parsing here. It would be doable with the 'notes' extension, but would require
+    enough context carrying forward that it'd need reimplementations of all bare string- and regex-matching things to
+    understand how many levels deep they are.
+
+    Here is the skinny: the shell has the $( ) which offer an objectively cleaner syntax.
+    We parse backticks recursively because it's about the neatest approach to implement the shell spec that describes
+    the feature in terms of a recursive implementation.
+
+    The Posix shell spec, section 2.6.3, says this:
+
+        Within the backquoted style of command substitution, <backslash> shall retain its literal meaning, except when
+        followed by: '$', '`', or <backslash>. The search for the matching backquote shall be satisfied by the first
+        unquoted non-escaped backquote; during this search, if a non-escaped backquote is encountered within a shell
+        comment, a here-document, an embedded command substitution of the $(command) form, or a quoted string,
+        undefined results occur. A single-quoted or double-quoted string that begins, but does not end, within the
+        "`...`" sequence produces undefined results.
+
+    What a mess.
+    """
+    content = yield string("`") >> (string("`").should_fail("backtick") >> (
+                                    regex(r'[^\\`]*') |
+                                    string(r"\$").result("$") |
+                                    string(r"\\").result("\\") |
+                                    string(r"\`").result("`") |
+                                    string("\\")
+                                    )).many().concat() << string("`")
+    return command_sequence.parse(content)
+
+
+word_part = backtick \
+          | word_variable_reference \
           | word_arith \
           | word_expr \
           | word_variable_name \
