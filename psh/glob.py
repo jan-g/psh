@@ -2,13 +2,17 @@ import functools
 import inspect
 import pathlib
 import re
-from .model import Comparable, Evaluable, Word, ConstantString
+
+from .base import Comparable, Evaluable
 from .sentinel import Sentinel
 
 
 class _Star(Comparable, Evaluable, Sentinel):
     def evaluate(self, env, input=None, output=None, error=None):
         return self
+
+    def execute(self,  env, input=None, output=None, error=None):
+        raise RuntimeError("attempt to execute _Star")
 
 
 STAR = _Star("{*}")
@@ -17,6 +21,9 @@ STAR = _Star("{*}")
 class _StarStar(Comparable, Evaluable, Sentinel):
     def evaluate(self, env, input=None, output=None, error=None):
         return self
+
+    def execute(self,  env, input=None, output=None, error=None):
+        raise RuntimeError("attempt to execute _Star")
 
 
 STARSTAR = _StarStar("{**}")
@@ -117,8 +124,13 @@ def compile_name_match(bits):
 
 def expand(env, word, dir):
     """Given a word, turn it into a list of strings"""
-    assert isinstance(word, Word)
+    ans = [item.evaluate(env) for item in word]
+    if STAR not in ans and STARSTAR not in ans:
+        return [''.join(ans)]
+
     output = flatten(explode(item.evaluate(env)) for item in word)
+    if output[:2] == ["", SLASH]:
+        dir = "/"
 
     result = start(dir)
     bits = []

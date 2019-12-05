@@ -4,37 +4,13 @@ import fcntl
 import io
 import logging
 import os
-import re
 import subprocess
 
+from .base import Comparable, Evaluable
 from .builtin import Env
+from .glob import flatten, expand
 
 LOG = logging.getLogger(__name__)
-
-
-class Comparable:
-    def __eq__(self, other):
-        return ((isinstance(other, type(self))
-                 and all(other.__dict__.get(k) == v
-                         for (k, v) in self.__dict__.items()
-                         if not k.startswith("_"))) or
-                (isinstance(self, type(other))
-                 and all(self.__dict__.get(k) == v
-                         for (k, v) in other.__dict__.items()
-                         if not k.startswith("_"))))
-
-
-class Evaluable:
-    def evaluate(self, env, input=None, output=None, error=None):
-        out = io.BytesIO()
-        self.execute(env, input=input, output=out, error=error)
-        return out.getvalue().decode("utf-8").rstrip("\n")
-
-    def execute(self,  env, input=None, output=None, error=None):
-        raise NotImplementedError()
-
-    def is_null(self):
-        return False
 
 
 class List(Comparable, Evaluable):
@@ -342,7 +318,7 @@ class Command(Redirects, List):
         assert env.permit_execution
         Assignment.run(env, self.assignments)
         if env.permit_execution and len(self) > 0:
-            args = [item.evaluate(env) for item in self]
+            args = evaluate(env, self)
             if args[0] in env.builtins:
                 with Redirect.activate(env, self) as saver:
                     res = env.builtins[args[0]](*args[1:], env=env,
@@ -535,3 +511,7 @@ class Function(Comparable, Evaluable):
             return self.body.execute(env2, input=input, output=output, error=error)
         except Function.Return as e:
             return e.ret
+
+
+def evaluate(env, ws):
+    return flatten([expand(env, w, '.') for w in ws])
