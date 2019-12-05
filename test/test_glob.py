@@ -5,14 +5,27 @@ import tempfile
 from psh.glob import start, entries, dirs_only, recurse, name_matches, STAR, STARSTAR, expand
 from psh.model import Word, ConstantString
 from psh.local import make_env
+from psh.sentinel import Sentinel
+
+
+TOUCH = Sentinel("TOUCH")
 
 
 @contextlib.contextmanager
 def make_dirs(*ds):
     with tempfile.TemporaryDirectory() as d:
         if len(ds) > 0:
+            md = True
             for dd in ds:
-                os.makedirs(os.path.join(d, dd), exist_ok=True)
+                if dd is TOUCH:
+                    md = False
+                elif md:
+                    os.makedirs(os.path.join(d, dd), exist_ok=True)
+                else:
+                    p = os.path.join(d, dd)
+                    os.makedirs(os.path.dirname(p), exist_ok=True)
+                    with open(p, "w"):
+                        pass
         else:
             os.makedirs(os.path.join(d, "a", "aa", "aaa1"), exist_ok=True)
             os.makedirs(os.path.join(d, "a", "aa", "aaa2"), exist_ok=True)
@@ -82,3 +95,47 @@ def test_word_expand_rec():
             ans = expand(env, word, ".")
 
     assert ans == ["a/b*/cd/e", "a/b*/cfood/e"]
+
+
+def test_no_dots():
+    word = Word([STAR, ConstantString("/..")])
+    env = make_env()
+
+    with make_dirs("a", "b", ".c", ".d", TOUCH, "e", ".f") as d:
+        with cwd(d):
+            ans = expand(env, word, ".")
+
+    assert ans == ["a/..", "b/.."]
+
+
+def test_dots():
+    word = Word([ConstantString("."), STAR, ConstantString("/..")])
+    env = make_env()
+
+    with make_dirs("a", "b", ".c", ".d", TOUCH, "e", ".f") as d:
+        with cwd(d):
+            ans = expand(env, word, ".")
+
+    assert ans == [".c/..", ".d/.."]
+
+
+def test_files_too():
+    word = Word([STAR])
+    env = make_env()
+
+    with make_dirs("a", "b", ".c", ".d", TOUCH, "e", ".f") as d:
+        with cwd(d):
+            ans = expand(env, word, ".")
+
+    assert ans == ["a", "b", "e"]
+
+
+def test_more_dots():
+    word = Word([ConstantString("."), STAR])
+    env = make_env()
+
+    with make_dirs("a", "b", ".c", ".d", TOUCH, "e", ".f") as d:
+        with cwd(d):
+            ans = expand(env, word, ".")
+
+    assert ans == [".c", ".d", ".f"]

@@ -76,6 +76,15 @@ def entries(gen):
                 yield sub_item
 
 
+def thence(where):
+    @gen
+    def thence(gen):
+        for item in gen:
+            if (item / where).exists():
+                yield item / where
+    return thence
+
+
 def name_matches(pattern):
     if isinstance(pattern, str):
         pattern = re.compile(pattern)
@@ -115,11 +124,27 @@ def compile_name_match(bits):
     r = "^"
     for b in bits:
         if b is STAR:
+            if r == "^":
+                r += "[^\\.]"
             r += ".*"
         else:
             r += re.escape(b)
     r += "$"
     return re.compile(r)
+
+
+def _bits(result, bits, rec=False):
+    if any(not isinstance(item, str) for item in bits):
+        result = entries(result)
+        result = name_matches(compile_name_match(bits))(result)
+        if rec:
+            result = recurse(result, entries)
+    else:
+        # Just tack on the next bit
+        assert not rec
+        result = thence(''.join(bits))(result)
+
+    return result
 
 
 def expand(env, word, dir):
@@ -144,17 +169,11 @@ def expand(env, word, dir):
             bits.append(STAR)
             rec = True
         elif item is SLASH:
-            result = entries(result)
-            result = name_matches(compile_name_match(bits))(result)
-            if rec:
-                result = recurse(result, entries)
+            result = _bits(result, bits, rec)
             bits = []
             rec = False
     else:
         if len(bits) > 0:
-            result = entries(result)
-            result = name_matches(compile_name_match(bits))(result)
-            if rec:
-                result = recurse(result, entries)
+            result = _bits(result, bits, rec)
 
     return [str(item) for item in result]
