@@ -6,11 +6,13 @@ from psh.model import Word, ConstantString, Assignment, Command, VarRef, Id, Tok
 from psh.local import make_env
 
 
+foo = Word([ConstantString("foo")])
+tick = lambda content: Word([CommandSequence([Command([content])])])
+
+
 @pytest.mark.parametrize(("text", "expected"), (
-        ("`foo`", Command([Word([
-                    CommandSequence([Command([Word([
-                        ConstantString("foo")]),
-                    ])])])])),
+        ("`foo`", Command([tick(foo)])),
+        (r"`\`foo\``", Command([tick(tick(foo))])),
 ))
 def test_backtick(text, expected):
     cmd = command.parse(text)

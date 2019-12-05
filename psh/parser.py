@@ -318,10 +318,10 @@ def backtick():
     What a mess.
     """
     content = yield string("`") >> (string("`").should_fail("backtick") >> (
-                                    regex(r'[^\\`]*') |
+                                    string(r"\`").result("`") |
                                     string(r"\$").result("$") |
                                     string(r"\\").result("\\") |
-                                    string(r"\`").result("`") |
+                                    regex(r'[^\\`]*') |
                                     string("\\")
                                     )).many().concat() << string("`")
     return command_sequence.parse(content)
