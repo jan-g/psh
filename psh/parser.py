@@ -6,6 +6,7 @@ from .model import (ConstantString, Token, Id, VarRef, Word, Arith, Assignment,
                     Command, CommandSequence, CommandPipe, While, If, Function,
                     Redirect, RedirectFrom, RedirectTo, RedirectDup, RedirectHere,
                     MaybeDoubleQuoted,)
+from .glob import STAR, STARSTAR
 
 
 # All our parser use may need to carry notes forward.
@@ -218,14 +219,16 @@ def command_sequence():
 eaten_newline = string("\\\n").result(Token(""))
 variable_id = regex("[a-zA-Z_][a-zA-Z0-9_]*")
 variable_name = regex("[0-9\\?!#]") | variable_id
-word_id = regex('[^\\s\'()$=";|<>&\\\\{}`]+').map(ConstantString)
+word_id = regex('[^\\s\'()$=";|<>&\\\\{}`*]+').map(ConstantString)
 word_redir = string_from("<&", "<<", "<", ">&", ">>", ">").map(Token)
 word_single = (string("'") >> regex("[^']*") << string("'")).map(ConstantString)
 word_expr = string("$(") >> command_sequence << string(")")
+word_backslash = string("\\") >> any_char.map(ConstantString)
 word_variable_reference = (string("$") >> variable_name).map(VarRef)
 word_variable_name = variable_id.map(Id)
 word_equals = string("=").map(Token)
 word_dbrace = string("{}").map(Token)
+word_glob = string("**").result(STARSTAR) | string("*").result(STAR)
 
 e_id = variable_id
 
@@ -338,7 +341,9 @@ word_part = backtick \
           | word_single \
           | word_double \
           | word_dbrace \
-          | eaten_newline
+          | eaten_newline \
+          | word_backslash \
+          | word_glob
 
 word = word_part.many().map(
     lambda x: x[0] if len(x) == 1 and isinstance(x[0], Word) else
