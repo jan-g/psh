@@ -480,11 +480,19 @@ class CommandPipe(List):
         return res
 
 
+class Break(Exception):
+    def __init__(self, n, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.n = n
+
+
+class Continue(Exception):
+    def __init__(self, n, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.n = n
+
+
 class While(Evaluable, Redirects):
-    class Break(Exception):
-        def __init__(self, n, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-            self.n = n
 
     def __init__(self, condition=None, body=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -499,10 +507,15 @@ class While(Evaluable, Redirects):
                     return res
                 try:
                     self.body.execute(env, input=input, output=output, error=error)
-                except While.Break as e:
+                except Break as e:
                     e.n -= 1
                     if e.n <= 0:
                         return 0
+                    raise e
+                except Continue as e:
+                    e.n -= 1
+                    if e.n <= 0:
+                        continue
                     raise e
 
     def __repr__(self):
@@ -605,7 +618,18 @@ class For(Comparable, Redirects):
 
             for word in words:
                 env[var] = word
-                res = self.body.execute(env, input=input, output=output, error=error)
+                try:
+                    res = self.body.execute(env, input=input, output=output, error=error)
+                except Break as e:
+                    e.n -= 1
+                    if e.n <= 0:
+                        return 0
+                    raise e
+                except Continue as e:
+                    e.n -= 1
+                    if e.n <= 0:
+                        continue
+                    raise e
         return res
 
 
