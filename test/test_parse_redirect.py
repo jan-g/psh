@@ -7,25 +7,27 @@ from psh.model import (Word, ConstantString, Command, VarRef, Id, Token,
 
 
 cat = lambda: Command([Word([Id("cat")])])
+w = lambda w: Word([ConstantString(w)])
+devnull = w("/dev/null")
 
 
 @pytest.mark.parametrize(
     ("text", "expected"),
     (
-        ("0</dev/null cat", cat().with_redirect(RedirectFrom(0, ["/dev/null"]))),
-        ("1>/dev/null cat", cat().with_redirect(RedirectTo(1, ["/dev/null"]))),
-        ("2>>/dev/null cat", cat().with_redirect(RedirectTo(2, ["/dev/null"], append=True))),
-        ("3>&- cat", cat().with_redirect(RedirectDup(3, ["-"]))),
-        ("0<&- cat", cat().with_redirect(RedirectDup(0, ["-"]))),
-        ("2>&1 cat", cat().with_redirect(RedirectDup(2, ["1"]))),
-        ("0<&6 cat", cat().with_redirect(RedirectDup(0, ["6"]))),
-        ("</dev/null cat", cat().with_redirect(RedirectFrom(0, ["/dev/null"]))),
-        (">/dev/null cat", cat().with_redirect(RedirectTo(1, ["/dev/null"]))),
-        (">>/dev/null cat", cat().with_redirect(RedirectTo(1, ["/dev/null"], append=True))),
-        (">&- cat", cat().with_redirect(RedirectDup(1, ["-"]))),
-        ("<&- cat", cat().with_redirect(RedirectDup(0, ["-"]))),
-        (">&2 cat", cat().with_redirect(RedirectDup(1, ["2"]))),
-        ("<&6 cat", cat().with_redirect(RedirectDup(0, ["6"]))),
+        ("0</dev/null cat", cat().with_redirect(RedirectFrom(0, devnull))),
+        ("1>/dev/null cat", cat().with_redirect(RedirectTo(1, devnull))),
+        ("2>>/dev/null cat", cat().with_redirect(RedirectTo(2, devnull, append=True))),
+        ("3>&- cat", cat().with_redirect(RedirectDup(3, w("-")))),
+        ("0<&- cat", cat().with_redirect(RedirectDup(0, w("-")))),
+        ("2>&1 cat", cat().with_redirect(RedirectDup(2, w("1")))),
+        ("0<&6 cat", cat().with_redirect(RedirectDup(0, w("6")))),
+        ("</dev/null cat", cat().with_redirect(RedirectFrom(0, devnull))),
+        (">/dev/null cat", cat().with_redirect(RedirectTo(1, devnull))),
+        (">>/dev/null cat", cat().with_redirect(RedirectTo(1, devnull, append=True))),
+        (">&- cat", cat().with_redirect(RedirectDup(1, w("-")))),
+        ("<&- cat", cat().with_redirect(RedirectDup(0, w("-")))),
+        (">&2 cat", cat().with_redirect(RedirectDup(1, w("2")))),
+        ("<&6 cat", cat().with_redirect(RedirectDup(0, w("6")))),
         ("cat <<'EOF'\nhello $world\nEOF\n", cat().with_redirect(
             RedirectHere(end="EOF", quote="'", content=ConstantString("hello $world\n")))),
         ("cat <<\"EOF\"\nhello $world\nEOF\n", cat().with_redirect(
@@ -34,7 +36,7 @@ cat = lambda: Command([Word([Id("cat")])])
             RedirectHere(end="EOF",
                          content=Word([
                              ConstantString("hello "),
-                             VarRef("world", double_quoted=True),
+                             VarRef(ConstantString("world"), double_quoted=True),
                              ConstantString("\n"),
                          ], double_quoted=True)))),
         ("cat <<'EOF'\nhello $world\nEOF", cat().with_redirect(
@@ -63,7 +65,7 @@ def test_while():
                 CommandSequence([While(
                     CommandSequence([Command([Word([ConstantString("a")])])]),
                     CommandSequence([Command([Word([ConstantString("b")])])]),
-                ).with_redirect(RedirectFrom(0, ["/dev/null"]), RedirectTo(1, ["/tmp/x"], append=True))])),
+                ).with_redirect(RedirectFrom(0, devnull), RedirectTo(1, w("/tmp/x"), append=True))])),
     ):
         cmd = command_sequence.parse(i)
         assert cmd == o
@@ -76,7 +78,7 @@ def test_if():
                 CommandSequence([If([
                     (CommandSequence([Command([Word([ConstantString("a")])])]),
                      CommandSequence([Command([Word([ConstantString("b")])])]))
-                ]).with_redirect(RedirectFrom(0, ["/dev/null"]), RedirectTo(1, ["/tmp/x"], append=True))])),
+                ]).with_redirect(RedirectFrom(0, devnull), RedirectTo(1, w("/tmp/x"), append=True))])),
     ):
         cmd = command_sequence.parse(i)
         assert cmd == o

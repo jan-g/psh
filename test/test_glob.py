@@ -61,7 +61,7 @@ def test_splat_matching():
         for item in name_matches(".*b")(recurse(entries(d), entries)):
             items.append(item)
 
-    assert [item.name for item in items] == ["ab", "aba1", "b", "bb", "bbb1", "bbb2"]
+    assert [item.name for item in items] == ["ab", "b", "bb"]
 
 
 @contextlib.contextmanager

@@ -5,7 +5,7 @@ from parsy_extn import monkeypatch_parsy, get_notes, put_note
 from .model import (ConstantString, Token, Id, VarRef, Word, Arith, Assignment,
                     Command, CommandSequence, CommandPipe, While, If, Function,
                     Redirect, RedirectFrom, RedirectTo, RedirectDup, RedirectHere,
-                    MaybeDoubleQuoted,)
+                    MaybeDoubleQuoted, VarOp)
 from .glob import STAR, STARSTAR
 
 
@@ -218,19 +218,31 @@ def command_sequence():
 
 eaten_newline = string("\\\n").result(Token(""))
 variable_id = regex("[a-zA-Z_][a-zA-Z0-9_]*")
-variable_name = regex("[0-9\\?!#]") | variable_id
+variable_name = regex("[1-9][0-9]*|[0\\?!#@\\*]") | variable_id
 word_id = regex('[^\\s\'()$=";|<>&\\\\{}`*]+').map(ConstantString)
 word_redir = string_from("<&", "<<", "<", ">&", ">>", ">").map(Token)
 word_single = (string("'") >> regex("[^']*") << string("'")).map(ConstantString)
 word_expr = string("$(") >> command_sequence << string(")")
 word_backslash = string("\\") >> any_char.map(ConstantString)
-word_variable_reference = (string("$") >> variable_name).map(VarRef)
+word_variable_reference = (string("$") >> variable_name).map(ConstantString).map(VarRef)
 word_variable_name = variable_id.map(Id)
 word_equals = string("=").map(Token)
 word_dbrace = string("{}").map(Token)
 word_glob = string("**").result(STARSTAR) | string("*").result(STAR)
 
 e_id = variable_id
+
+
+@generate("word-variable-complex")
+def word_variable_complex():
+    yield string("${")
+    ref = yield variable_name.map(ConstantString).map(VarRef)
+    op = yield string_from("##", "#", "%%", "%").optional()
+    if op is not None:
+        param = yield word
+        ref = VarOp(ref, op, param)
+    yield string("}")
+    return ref
 
 
 @generate("expr-simple")
@@ -290,7 +302,8 @@ double_content = (regex(r'[^"$\\]+').map(ConstantString) |
                   string("\\") >> any_char.map(ConstantString) |
                   word_arith.map(partial(MaybeDoubleQuoted.with_double_quoted)) |
                   word_expr.map(partial(MaybeDoubleQuoted.with_double_quoted)) |
-                  word_variable_reference.map(partial(MaybeDoubleQuoted.with_double_quoted))
+                  word_variable_reference.map(partial(MaybeDoubleQuoted.with_double_quoted)) |
+                  word_variable_complex.map(partial(MaybeDoubleQuoted.with_double_quoted))
                   ).many().map(lambda rope: Word(rope, double_quoted=True))
 
 word_double = (string('""').result(Word([ConstantString("")], double_quoted=True))) | \
@@ -335,6 +348,7 @@ word_part = backtick \
           | word_arith \
           | word_expr \
           | word_variable_name \
+          | word_variable_complex \
           | word_id \
           | word_equals \
           | word_redir \

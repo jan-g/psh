@@ -16,11 +16,11 @@ from psh.local import make_env
         ("'hello'' world'", Command([Word([ConstantString("hello"),
                                            ConstantString(" world")])])),
         ("$(cat $foo $bar)", Command([Word([CommandSequence([Command([Word([ConstantString("cat")]),
-                                                                      Word([VarRef("foo")]),
-                                                                      Word([VarRef("bar")])])])])])),
+                                                                      Word([VarRef(ConstantString("foo"))]),
+                                                                      Word([VarRef(ConstantString("bar"))])])])])])),
         ("a=2", Command([]).with_assignment(Assignment("a", Word([ConstantString("2")])))),
         ("a=1 b=2 echo $a$b", Command([Word([Id("echo")]),
-                                       Word([VarRef("a"), VarRef("b")])]).
+                                       Word([VarRef(ConstantString("a")), VarRef(ConstantString("b"))])]).
          with_assignment(Assignment("a", Word([ConstantString("1")])),
                          Assignment("b", Word([ConstantString("2")])))),
         ("a=2 echo b=1", Command([Word([Id("echo")]),

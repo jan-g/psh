@@ -14,9 +14,9 @@ from psh.model import Word, ConstantString, Command, VarRef, Id, Token, CommandS
         ("", CommandSequence([Command([])])),
         ('""', CommandSequence([Command([Word([ConstantString('')], double_quoted=True)])])),
         ('"$a $b"', CommandSequence([Command([Word([
-            VarRef("a", double_quoted=True),
+            VarRef(ConstantString("a"), double_quoted=True),
             ConstantString(" "),
-            VarRef("b", double_quoted=True),
+            VarRef(ConstantString("b"), double_quoted=True),
         ], double_quoted=True)])])),
     ), ids=lambda x: x.replace(" ", "_").replace('"', '%') if isinstance(x, str) else None)
 def test_dq(text, expected):

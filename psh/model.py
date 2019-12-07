@@ -8,7 +8,7 @@ import subprocess
 
 from .base import Comparable, Evaluable
 from .builtin import Env
-from .glob import flatten, expand
+from .glob import flatten, expand, compile_name_match
 
 LOG = logging.getLogger(__name__)
 
@@ -114,7 +114,7 @@ class ConstantString(Comparable):
         return self.s
 
     def __eq__(self, other):
-        return (isinstance(other, str) and self.s == other) or super().__eq__(other)
+        return (isinstance(other, self.__class__) and self.s == other.s) or super().__eq__(other)
 
 
 class Token(ConstantString):
@@ -136,6 +136,65 @@ class VarRef(Comparable, MaybeDoubleQuoted):
     def __repr__(self):
         quote = '"' if self.double_quoted else ''
         return '{0}${{{1}}}{0}'.format(quote, self.expr)
+
+
+def _drop_prefix(env, ref, param):
+    value = ref.evaluate(env)
+    regexp = compile_name_match([item.evaluate(env) for item in param])
+    for i in range(0, len(value) + 1):
+        if regexp.fullmatch(value, endpos=i):
+            return value[i:]
+    return value
+
+
+def _drop_prefix_longest(env, ref, param):
+    value = ref.evaluate(env)
+    regexp = compile_name_match([item.evaluate(env) for item in param])
+    for i in range(len(value), -1, -1):
+        if regexp.fullmatch(value, endpos=i):
+            return value[i:]
+    return value
+
+
+def _drop_suffix(env, ref, param):
+    value = ref.evaluate(env)
+    regexp = compile_name_match([item.evaluate(env) for item in param])
+    for i in range(len(value), -1, -1):
+        match = regexp.fullmatch(value, pos=i)
+        if match:
+            return value[:i]
+    return value
+
+
+def _drop_suffix_longest(env, ref, param):
+    value = ref.evaluate(env)
+    regexp = compile_name_match([item.evaluate(env) for item in param])
+    for i in range(0, len(value) + 1):
+        if regexp.fullmatch(value, pos=i):
+            return value[:i]
+    return value
+
+
+class VarOp(Comparable, MaybeDoubleQuoted):
+    OPS = {
+        "#": _drop_prefix,
+        "##": _drop_prefix_longest,
+        "%": _drop_suffix,
+        "%%": _drop_suffix_longest,
+    }
+
+    def __init__(self, ref=None, op=None, param=None, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.ref = ref
+        self.op = op
+        self.param = param
+
+    def __repr__(self):
+        quote = '"' if self.double_quoted else ''
+        return '{0}${{{1}{2}{3}}}{0}'.format(quote, self.ref, self.op, self.param)
+
+    def evaluate(self, env):
+        return self.OPS[self.op](env, self.ref, self.param)
 
 
 ASSIGN = Token("=")

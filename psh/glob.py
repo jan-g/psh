@@ -91,7 +91,7 @@ def name_matches(pattern):
     @gen
     def name_matches(gen):
         for item in gen:
-            if pattern.match(item.name):
+            if pattern.fullmatch(item.name):
                 yield item
     return name_matches
 
@@ -121,15 +121,15 @@ def explode(part):
 
 
 def compile_name_match(bits):
-    r = "^"
+    r = ""
     for b in bits:
         if b is STAR:
-            if r == "^":
-                r += "[^\\.]"
-            r += ".*"
+            if r == "":
+                r += "([^\\./][^/]*)?"
+            else:
+                r += "[^/]*"
         else:
             r += re.escape(b)
-    r += "$"
     return re.compile(r)
 
 
