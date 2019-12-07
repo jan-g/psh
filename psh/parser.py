@@ -3,7 +3,7 @@ from parsy import eof, regex, generate, string, ParseError, fail, seq, success, 
 from parsy_extn import monkeypatch_parsy, get_notes, put_note
 
 from .model import (ConstantString, Token, Id, VarRef, Word, Arith, Assignment,
-                    Command, CommandSequence, CommandPipe, While, If, Function,
+                    Command, CommandSequence, CommandPipe, While, If, Case, Function,
                     Redirect, RedirectFrom, RedirectTo, RedirectDup, RedirectHere,
                     MaybeDoubleQuoted, VarOp)
 from .glob import STAR, STARSTAR
@@ -71,7 +71,7 @@ whitespace = ws | eol
 # End of statement
 EOF = object()
 EOS = object()
-eos = ws.optional() >> (string(";") | eol | eof.result(EOF))
+eos = ws.optional() >> (string(";") << string(";").should_fail(";;") | eol | eof.result(EOF))
 
 
 @generate("command")
@@ -97,7 +97,7 @@ def command():
 
         if not w:
             break
-        if len(words) == 0 and w.matches_reserved("while", "do", "done", "if", "then", "elif", "else", "fi"):
+        if len(words) == 0 and w.matches_reserved("while", "do", "done", "if", "then", "elif", "else", "fi", "case", "esac"):
             return fail("can't have a reserved word here")
 
         words.append(w)
@@ -153,6 +153,26 @@ def command_cond():
     return If(pairs).with_redirect(*redirs1, *redirs2)
 
 
+@generate("case")
+def command_case():
+    yield ws.optional()
+    redirs1 = yield redirects
+    yield ws.optional()
+    yield string("case") << ws.optional()
+    test = yield word << ws.optional() << string("in")
+    case = Case(test)
+    while True:
+        pattern = yield (whitespace.optional() >> string("(").optional() >> word << string(")")).optional()
+        if pattern is None:
+            break
+        body = yield command_sequence << whitespace.optional() << string(";;")
+        case.with_case(pattern, body)
+    yield whitespace.optional() >> string("esac")
+    yield ws.optional()
+    redirs2 = yield redirects
+    return case.with_redirect(*redirs1, *redirs2)
+
+
 @generate("command-brackets")
 def command_brackets():
     yield ws.optional() >> string("{")
@@ -169,7 +189,7 @@ def function_def():
     return Function(name, body)
 
 
-compound_command = function_def | command_brackets | command_while | command_cond | command
+compound_command = function_def | command_brackets | command_while | command_cond | command_case | command
 
 
 @generate("pipeline")

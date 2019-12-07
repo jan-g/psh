@@ -540,6 +540,34 @@ class If(Redirects, List):
                 self.redirects == other.redirects)
 
 
+class Case(Comparable, Redirects):
+    def __init__(self, expr=None, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.expr = expr
+        self.cases = []
+
+    def is_null(self):
+        return False
+
+    def with_case(self, pattern, cmd):
+        self.cases.append((pattern, cmd))
+        return self
+
+    def execute(self, env, input=None, output=None, error=None):
+        with Redirect.activate(env, self) as saver:
+            test = self.expr.evaluate(env)
+
+            for pattern, body in self.cases:
+                match = compile_case_match([item.evaluate(env) for item in pattern]).fullmatch(test)
+                if match:
+                    return body.execute(env, input=input, output=output, error=error)
+
+        return 0
+
+    def __repr__(self):
+        return "Case({}, {})".format(self.expr, " ".join("({}) {};;".format(p, b) for p, b in self.cases))
+
+
 class Function(Comparable, Evaluable):
     class Return(Exception):
         def __init__(self, ret, *args, **kwargs):
