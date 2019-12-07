@@ -8,7 +8,7 @@ import subprocess
 
 from .base import Comparable, Evaluable
 from .builtin import Env
-from .glob import flatten, expand, compile_name_match
+from .glob import flatten, expand, compile_case_match
 
 LOG = logging.getLogger(__name__)
 
@@ -140,7 +140,7 @@ class VarRef(Comparable, MaybeDoubleQuoted):
 
 def _drop_prefix(env, ref, param):
     value = ref.evaluate(env)
-    regexp = compile_name_match([item.evaluate(env) for item in param])
+    regexp = compile_case_match([item.evaluate(env) for item in param])
     for i in range(0, len(value) + 1):
         if regexp.fullmatch(value, endpos=i):
             return value[i:]
@@ -149,7 +149,7 @@ def _drop_prefix(env, ref, param):
 
 def _drop_prefix_longest(env, ref, param):
     value = ref.evaluate(env)
-    regexp = compile_name_match([item.evaluate(env) for item in param])
+    regexp = compile_case_match([item.evaluate(env) for item in param])
     for i in range(len(value), -1, -1):
         if regexp.fullmatch(value, endpos=i):
             return value[i:]
@@ -158,7 +158,7 @@ def _drop_prefix_longest(env, ref, param):
 
 def _drop_suffix(env, ref, param):
     value = ref.evaluate(env)
-    regexp = compile_name_match([item.evaluate(env) for item in param])
+    regexp = compile_case_match([item.evaluate(env) for item in param])
     for i in range(len(value), -1, -1):
         match = regexp.fullmatch(value, pos=i)
         if match:
@@ -168,7 +168,7 @@ def _drop_suffix(env, ref, param):
 
 def _drop_suffix_longest(env, ref, param):
     value = ref.evaluate(env)
-    regexp = compile_name_match([item.evaluate(env) for item in param])
+    regexp = compile_case_match([item.evaluate(env) for item in param])
     for i in range(0, len(value) + 1):
         if regexp.fullmatch(value, pos=i):
             return value[:i]

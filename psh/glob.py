@@ -120,7 +120,7 @@ def explode(part):
     return [part]
 
 
-def compile_name_match(bits):
+def compile_file_match(bits):
     r = ""
     for b in bits:
         if b is STAR:
@@ -133,10 +133,20 @@ def compile_name_match(bits):
     return re.compile(r)
 
 
+def compile_case_match(bits):
+    r = ""
+    for b in bits:
+        if b is STAR:
+            r += ".*"
+        else:
+            r += re.escape(b)
+    return re.compile(r)
+
+
 def _bits(result, bits, rec=False):
     if any(not isinstance(item, str) for item in bits):
         result = entries(result)
-        result = name_matches(compile_name_match(bits))(result)
+        result = name_matches(compile_file_match(bits))(result)
         if rec:
             result = recurse(result, entries)
     else:
