@@ -1,6 +1,5 @@
 import pytest
 
-from psh.parser import command_sequence
 from psh.model import Word, Id, CommandSequence, Command, Case, VarRef, ConstantString
 from psh.glob import STAR
 from psh.local import make_env

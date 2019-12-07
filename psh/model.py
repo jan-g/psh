@@ -567,6 +567,47 @@ class Case(Comparable, Redirects):
     def __repr__(self):
         return "Case({}, {})".format(self.expr, " ".join("({}) {};;".format(p, b) for p, b in self.cases))
 
+    def execute(self, env, input=None, output=None, error=None):
+        with Redirect.activate(env, self) as saver:
+            test = self.expr.evaluate(env)
+
+            for pattern, body in self.cases:
+                match = compile_case_match([item.evaluate(env) for item in pattern]).fullmatch(test)
+                if match:
+                    return body.execute(env, input=input, output=output, error=error)
+
+        return 0
+
+
+class For(Comparable, Redirects):
+    def __init__(self, var=None, words=None, body=None, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.var = var
+        self.words = words
+        self.body = body
+
+    def is_null(self):
+        return False
+
+    def __repr__(self):
+        return "{}({!r}, {!r}, {!r}{})".format(self.__class__.__name__,
+                                               self.var, self.words, self.body,
+                                               "".join(", {}={!r}".format(k, v)
+                                                       for (k, v) in self.__dict__.items()
+                                                       if not k.startswith("_")
+                                                       and k not in ("var", "words", "body")))
+
+    def execute(self, env, input=None, output=None, error=None):
+        res = 0
+        with Redirect.activate(env, self) as saver:
+            var = self.var.evaluate(env)
+            words = [word.evaluate(env) for word in self.words]
+
+            for word in words:
+                env[var] = word
+                res = self.body.execute(env, input=input, output=output, error=error)
+        return res
+
 
 class Function(Comparable, Evaluable):
     class Return(Exception):

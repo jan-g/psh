@@ -37,6 +37,10 @@ def return_(*args, env=None, stdin=None, stdout=None, stderr=None):
     raise Function.Return(n)
 
 
+def colon(*args, env=None, stdin=None, stdout=None, stderr=None):
+    return 0
+
+
 def make_env():
     env = Env()
     env.permit_execution = True
@@ -45,5 +49,6 @@ def make_env():
         "local": local,
         "break": break_,
         "return": return_,
+        ":": colon,
     }
     return env

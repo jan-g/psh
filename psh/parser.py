@@ -5,7 +5,7 @@ from parsy_extn import monkeypatch_parsy, get_notes, put_note
 from .model import (ConstantString, Token, Id, VarRef, Word, Arith, Assignment,
                     Command, CommandSequence, CommandPipe, While, If, Case, Function,
                     Redirect, RedirectFrom, RedirectTo, RedirectDup, RedirectHere,
-                    MaybeDoubleQuoted, VarOp)
+                    MaybeDoubleQuoted, VarOp, For)
 from .glob import STAR, STARSTAR
 
 
@@ -97,7 +97,10 @@ def command():
 
         if not w:
             break
-        if len(words) == 0 and w.matches_reserved("while", "do", "done", "if", "then", "elif", "else", "fi", "case", "esac"):
+        if len(words) == 0 and w.matches_reserved("while", "do", "done",
+                                                  "if", "then", "elif", "else", "fi",
+                                                  "case", "esac",
+                                                  "for"):
             return fail("can't have a reserved word here")
 
         words.append(w)
@@ -118,7 +121,7 @@ def command_while():
     yield whitespace.optional() >> string("done")
     yield ws.optional()
     redirs2 = yield redirects
-    return While(condition=cond, body=CommandSequence(body)).with_redirect(*redirs1, *redirs2)
+    return While(condition=cond, body=body).with_redirect(*redirs1, *redirs2)
 
 
 @generate("cond")
@@ -173,6 +176,29 @@ def command_case():
     return case.with_redirect(*redirs1, *redirs2)
 
 
+@generate("for")
+def command_for():
+    yield ws.optional()
+    redirs1 = yield redirects
+    yield ws.optional()
+    yield string("for") << ws.optional()
+    var = yield variable_id.map(Id)
+
+    in_ = yield ws.optional() >> string("in").optional()
+    if in_ is not None:
+        words = yield (eos.should_fail("end-of-words") >> ws.optional() >> word).many()
+    else:
+        words = [VarRef(Token("@"))]
+
+    yield eos >> whitespace.optional() >> string("do")
+    body = yield command_sequence
+    yield whitespace.optional() >> string("done")
+    yield ws.optional()
+    redirs2 = yield redirects
+
+    return For(var=var, words=words, body=body).with_redirect(*redirs1, *redirs2)
+
+
 @generate("command-brackets")
 def command_brackets():
     yield ws.optional() >> string("{")
@@ -189,7 +215,7 @@ def function_def():
     return Function(name, body)
 
 
-compound_command = function_def | command_brackets | command_while | command_cond | command_case | command
+compound_command = function_def | command_brackets | command_while | command_cond | command_case | command_for | command
 
 
 @generate("pipeline")
